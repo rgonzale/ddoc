@@ -168,7 +168,7 @@ print_payload(const u_char *payload, int len)
         }
     }
 
-return 0;
+return; 
 }
 
 /*
@@ -206,28 +206,18 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
         return;
     }
 
+    // if TCP and Ack
+    if((ip->ip_p == IPPROTO_TCP) && (tcp->th_flags) == 16)
+	printf("good");
+
     /* print source and destination IP addresses */
     printf("       From: %s\n", inet_ntoa(ip->ip_src));
     printf("         To: %s\n", inet_ntoa(ip->ip_dst));
 
-    /* determine protocol */
-    switch(ip->ip_p) {
-        case IPPROTO_TCP:
-            printf("   Protocol: TCP\n");
-            break;
-        case IPPROTO_UDP:
-            printf("   Protocol: UDP\n");
-            return;
-        case IPPROTO_ICMP:
-            printf("   Protocol: ICMP\n");
-            return;
-        case IPPROTO_IP:
-            printf("   Protocol: IP\n");
-            return;
-        default:
-            printf("   Protocol: unknown\n");
-            return;
-    }
+    printf("         ID: %d\n", (ip->ip_id));
+    printf("        Seq: %lu\n", (tcp->th_seq));
+    printf("        Ack: %lu\n", (tcp->th_ack));
+    printf("        THF: %x\n", tcp->th_flags);
 
 /*
  *      *  OK, this packet is TCP.
@@ -260,7 +250,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
         print_payload(payload, size_payload);
     }
 
-return 0;
+return;
 }
 
 int promiscuous(pcap_t *handle, char *dev, char *errbuf) {
@@ -315,6 +305,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf) {
 
 
 	/* now we can set our callback function */
+	fprintf(stderr, "Capture starting\n");
 	pcap_loop(handle, num_packets, got_packet, NULL);
 
 	/* cleanup */
@@ -341,9 +332,9 @@ int main(int argc, char *argv[])  {
 		return(2);
 	}
 
-	printf("Device: %s\n", dev);
+	fprintf(stderr, "Device: %s\n", dev);
 
-	promiscuous(handle, dev, errbuf);
+	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf);
 
 	return(0);

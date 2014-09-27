@@ -70,6 +70,25 @@ struct sniff_tcp {
         u_short th_urp;                 /* urgent pointer */
 };
 
+/*
+ * checks beginning of payload to see if it contains 'GET' or 'POST'
+ * if it does then it returns 1 else it returns 0
+ *
+*/
+int isGETPOST(const u_char *payload)
+{
+	if((payload[0] == '\x47') &&	// 'G'
+		(payload[1] == '\x45') &&	// 'E'
+		(payload[2] == '\x54')		// 'T'
+ 	||
+		(payload[0] == '\x50') && 	// 'P'
+		(payload[1] == '\x4f') &&	// 'O'
+		(payload[2] == '\x53') &&	// 'S'
+		(payload[3] == '\x54'))		// 'T'
+			return 1;
+	else
+		return 0;
+}
 
 /*
  *  * print data in rows of 16 bytes: offset   hex   ascii
@@ -245,7 +264,8 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
  *           * treat it as a string.
  *                
 */
-    if (size_payload > 0) {
+    //if size of payload is greater than 0 and is a GET or POST request
+    if ((size_payload > 0) && (isGETPOST(payload))) {
         printf("   Payload (%d bytes):\n", size_payload);
         print_payload(payload, size_payload);
     }
@@ -282,7 +302,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 10;           /* number of packets to capture */
+	int num_packets = 5;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);

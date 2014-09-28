@@ -199,6 +199,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 {
 
     static int count = 1;                   /* packet counter */
+	char *host;								/* start of Host header */
 
     /* declare pointers to packet headers */
     const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
@@ -227,7 +228,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 
     // if TCP and Ack
     if((ip->ip_p == IPPROTO_TCP) && (tcp->th_flags) == 16)
-	printf("good");
+	printf("HTTP packet\n");
 
     /* print source and destination IP addresses */
     printf("       From: %s\n", inet_ntoa(ip->ip_src));
@@ -267,7 +268,10 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
     //if size of payload is greater than 0 and is a GET or POST request
     if ((size_payload > 0) && (isGETPOST(payload))) {
         printf("   Payload (%d bytes):\n", size_payload);
-        print_payload(payload, size_payload);
+		printf("%.*s\n", strcspn(payload, "\r"), payload);
+		host = strstr(payload, "Host: ");
+		printf("%.*s\n", strcspn(host, "\r"), host);
+        //print_payload(payload, size_payload);
     }
 
 return;

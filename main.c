@@ -110,7 +110,7 @@ struct Request {
 */
 Domain *DomainCreate(char *name)
 {
-	struct Domain *dom = malloc(sizeof(Domain));
+	struct Domain *dom = calloc(1, sizeof(Domain));
 	return dom;
 }
 
@@ -131,12 +131,13 @@ Init *Initialize()
 	return init;
 }
 
-int TearDown(Init *init_ptr)
+void TearDown(Init *init)
 {
-	free(init_ptr->ptr);
-	free(init_ptr);
+	free(init->ptr);
+	free(init);
+	
+	return;
 }
-
 
 /*
  * checks beginning of payload to see if it contains 'GET' or 'POST'
@@ -263,7 +264,7 @@ return;
  *   
 */
 void
-got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
+got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet, u_char *init)
 {
 
     static int count = 1;                   /* packet counter */
@@ -341,6 +342,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 		host = strstr(payload, "Host: ");
 		printf("%.*s\n", strcspn(host, "\r"), host);
         //print_payload(payload, size_payload);
+		//printf("%x\n", init);
     }
 
 return;
@@ -367,7 +369,7 @@ int promiscuous(pcap_t *handle, char *dev, char *errbuf) {
 	return 0;
 }
 
-int capture(pcap_t *handle, char *dev, char *errbuf) {
+int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 
 	struct bpf_program fp;		/* The compiled filter expression */
 	char filter_exp[] = "port 80";	/* The filter expression */
@@ -399,7 +401,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf) {
 
 	/* now we can set our callback function */
 	fprintf(stderr, "Capture starting\n");
-	pcap_loop(handle, num_packets, got_packet, NULL);
+	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)init);
 
 	/* cleanup */
 	pcap_freecode(&fp);
@@ -414,9 +416,10 @@ int main(int argc, char *argv[])  {
 
 	pcap_t *handle;
 
+	Init *init;
+
 	char *dev, errbuf[PCAP_ERRBUF_SIZE];
-
-
+	
 	// grab default interface
 	dev = pcap_lookupdev(errbuf);
 
@@ -428,10 +431,13 @@ int main(int argc, char *argv[])  {
 	fprintf(stderr, "Device: %s\n", dev);
 
 	// Initilize data structures
-	Initialize();
+	init = Initialize();
 
 	//promiscuous(handle, dev, errbuf);
-	capture(handle, dev, errbuf);
+	capture(handle, dev, errbuf, init);
+
+	// free up data structures
+	TearDown(init);
 
 	return(0);
 }

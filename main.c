@@ -71,6 +71,74 @@ struct sniff_tcp {
 };
 
 /*
+ * main struct that is at the top
+*/
+struct Init {
+		struct Domains *ptr;
+};
+
+typedef struct Init Init;
+
+struct Domains {
+	struct Domain *ptr;
+};
+
+/*
+ * struct to store data on domain
+*/
+
+typedef struct Domains Domains;
+
+struct Domain {
+		u_int GET, POST;
+		u_char name;
+		struct Request *requests[];
+};
+
+typedef struct Domain Domain;
+
+/*
+ * struct to store requests about a domain
+*/
+struct Request {
+		u_int count;	
+		u_char url;
+};
+
+/*
+ * allocates and creates a domain struct
+*/
+Domain *DomainCreate(char *name)
+{
+	struct Domain *dom = malloc(sizeof(Domain));
+	return dom;
+}
+
+void DomainRemove(Domain *dom)
+{
+	free(dom);
+	return;
+}
+		
+Init *Initialize()
+{
+	Init *init = calloc(1, sizeof(Init));
+
+	Domains *domains = calloc(1, sizeof(struct Domain));
+
+	init->ptr = domains;
+
+	return init;
+}
+
+int TearDown(Init *init_ptr)
+{
+	free(init_ptr->ptr);
+	free(init_ptr);
+}
+
+
+/*
  * checks beginning of payload to see if it contains 'GET' or 'POST'
  * if it does then it returns 1 else it returns 0
  *
@@ -268,7 +336,8 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
     //if size of payload is greater than 0 and is a GET or POST request
     if ((size_payload > 0) && (isGETPOST(payload))) {
         printf("   Payload (%d bytes):\n", size_payload);
-		printf("%.*s\n", strcspn(payload, "\r"), payload);
+		//printf("%.*s\n", strcspn(payload, "\r"), payload);
+		printf("%.*s\n", (strcspn(payload, "/")+1), payload);
 		host = strstr(payload, "Host: ");
 		printf("%.*s\n", strcspn(host, "\r"), host);
         //print_payload(payload, size_payload);
@@ -357,6 +426,9 @@ int main(int argc, char *argv[])  {
 	}
 
 	fprintf(stderr, "Device: %s\n", dev);
+
+	// Initilize data structures
+	Initialize();
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf);

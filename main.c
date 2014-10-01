@@ -74,25 +74,26 @@ struct sniff_tcp {
  * main struct that is at the top
 */
 struct Init {
-		struct Domains *ptr;
+		struct Domains *Dptr;
 };
 
 typedef struct Init Init;
 
 struct Domains {
-	struct Domain *ptr;
+	struct Domain *dptr[1];
+	//struct Domain *dptr;
 };
+
+typedef struct Domains Domains;
 
 /*
  * struct to store data on domain
 */
 
-typedef struct Domains Domains;
-
 struct Domain {
 		u_int GET, POST;
-		u_char name;
-		struct Request *requests[];
+		char name[32];
+		struct Request *requests[1];
 };
 
 typedef struct Domain Domain;
@@ -102,38 +103,97 @@ typedef struct Domain Domain;
 */
 struct Request {
 		u_int count;	
-		u_char url;
+		char url[32];
 };
+
+typedef struct Request Request;
 
 /*
  * allocates and creates a domain struct
 */
-Domain *DomainCreate(char *name)
+void DomainCreate(Init *init, char *host)
 {
-	struct Domain *dom = calloc(1, sizeof(Domain));
-	return dom;
-}
+	Domain *domain = calloc(1, sizeof(struct Domain));
+	//init->Dptr->dptr = domain;
+	init->Dptr->dptr[0] = domain;
+	strncpy(init->Dptr->dptr[0]->name, host, 32);
+	//strncpy(init->Dptr->dptr->name, host, 32);
+	init->Dptr->dptr[0]->GET = 0;
+	init->Dptr->dptr[0]->POST = 0;
 
-void DomainRemove(Domain *dom)
-{
-	free(dom);
+	Request *request = calloc(1, sizeof(struct Request));
+	init->Dptr->dptr[0]->requests[0] = request;
+	init->Dptr->dptr[0]->requests[0]->count = 0;
+
 	return;
 }
-		
+
+void AddRequest(Init *init, char *req)
+{
+	Request *request = calloc(1, sizeof(struct Request));
+	init->Dptr->dptr[0]->requests[0] = request;
+	init->Dptr->dptr[0]->requests[0]->count = 0;
+	init->Dptr->dptr[0]->requests[0]->count++;
+	strncpy(init->Dptr->dptr[0]->requests[0]->url, req, 32);
+}
+
+void DomainRemove(Domain *host)
+{
+	free(host);
+
+	return;
+}
+
+/*
+ * checks of domain exists
+*/
+int CheckIfDomainExists(Init *init, char *host)
+{
+	int i;
+	
+	for(i = 0; i < sizeof(init->Dptr->dptr)/sizeof(init->Dptr->dptr[0]); i++) {
+		if(strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
+			return 1;
+		else
+			return 0;
+	}
+}
+	
+/*
+ * executes accounting
+ * 
+ * request: GET / HTTP/1.1
+ * request: POST / HTTP/1.1
+ * host: darkterminal.net
+ * 
+ */
+void Tally(Init *init, int *http, const char *request, char *host)
+{
+
+	//if(!CheckifDomainExists(init, host))
+		DomainCreate(init, host);	
+
+	if(*http == 1) 		
+		init->Dptr->dptr[0]->GET++;
+	else if(*http == 2)
+		init->Dptr->dptr[0]->POST++;
+
+	strncpy(init->Dptr->dptr[0]->requests[0]->url, request, 32);
+}
+
+	
 Init *Initialize()
 {
 	Init *init = calloc(1, sizeof(Init));
-
 	Domains *domains = calloc(1, sizeof(struct Domain));
-
-	init->ptr = domains;
+	init->Dptr = domains;
 
 	return init;
 }
 
 void TearDown(Init *init)
 {
-	free(init->ptr);
+	free(init->Dptr);
 	free(init);
 	
 	return;
@@ -146,117 +206,17 @@ void TearDown(Init *init)
 */
 int isGETPOST(const u_char *payload)
 {
-	if((payload[0] == '\x47') &&	// 'G'
-		(payload[1] == '\x45') &&	// 'E'
-		(payload[2] == '\x54')		// 'T'
- 	||
-		(payload[0] == '\x50') && 	// 'P'
-		(payload[1] == '\x4f') &&	// 'O'
-		(payload[2] == '\x53') &&	// 'S'
-		(payload[3] == '\x54'))		// 'T'
+	if((payload[0] == '\x47') &&		// 'G'
+		(payload[1] == '\x45') &&		// 'E'
+		(payload[2] == '\x54'))			// 'T'
 			return 1;
+	else if((payload[0] == '\x50') && 	// 'P'
+		(payload[1] == '\x4f') &&		// 'O'
+		(payload[2] == '\x53') &&		// 'S'
+		(payload[3] == '\x54'))			// 'T'
+			return 2;
 	else
 		return 0;
-}
-
-/*
- *  * print data in rows of 16 bytes: offset   hex   ascii
- *   *
- *    * 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
- *     
-*/
-void
-print_hex_ascii_line(const u_char *payload, int len, int offset)
-{
-
-    int i;
-    int gap;
-    const u_char *ch;
-
-    /* offset */
-    printf("%05d   ", offset);
-
-    /* hex */
-    ch = payload;
-    for(i = 0; i < len; i++) {
-        printf("%02x ", *ch);
-        ch++;
-        /* print extra space after 8th byte for visual aid */
-        if (i == 7)
-            printf(" ");
-    }
-    /* print space to handle line less than 8 bytes */
-    if (len < 8)
-        printf(" ");
-
-    /* fill hex gap with spaces if not full line */
-    if (len < 16) {
-        gap = 16 - len;
-        for (i = 0; i < gap; i++) {
-            printf("   ");
-        }
-    }
-    printf("   ");
-
-    /* ascii (if printable) */
-    ch = payload;
-    for(i = 0; i < len; i++) {
-        if (isprint(*ch))
-            printf("%c", *ch);
-        else
-            printf(".");
-        ch++;
-    }
-
-    printf("\n");
-
-return;
-}
-
-/*
- *  * print packet payload data (avoid printing binary data)
- *   
-*/
-void
-print_payload(const u_char *payload, int len)
-{
-
-    int len_rem = len;
-    int line_width = 16;            /* number of bytes per line */
-    int line_len;
-    int offset = 0;                 /* zero-based offset counter */
-    const u_char *ch = payload;
-
-    if (len <= 0)
-        return;
-
-    /* data fits on one line */
-    if (len <= line_width) {
-        print_hex_ascii_line(ch, len, offset);
-        return;
-    }
-
-    /* data spans multiple lines */
-    for ( ;; ) {
-        /* compute current line length */
-        line_len = line_width % len_rem;
-        /* print line */
-        print_hex_ascii_line(ch, line_len, offset);
-        /* compute total remaining */
-        len_rem = len_rem - line_len;
-        /* shift pointer to remaining bytes to print */
-        ch = ch + line_len;
-        /* add offset */
-        offset = offset + line_width;
-        /* check if we have line width chars or less */
-        if (len_rem <= line_width) {
-            /* print last line and get out */
-            print_hex_ascii_line(ch, len_rem, offset);
-            break;
-        }
-    }
-
-return; 
 }
 
 /*
@@ -264,11 +224,16 @@ return;
  *   
 */
 void
-got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet, u_char *init)
+got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 {
 
     static int count = 1;                   /* packet counter */
+	int http;								/* HTTP method GET/POST */
+	char *request;							/* the actual web request url */
+	int num_request = 0, num_host = 0;		/* bytes to copy only request and host */
+	char request_clean[32];					 
 	char *host;								/* start of Host header */
+	char host_clean[32];					/* start of Host header not including 'Host: ' */
 
     /* declare pointers to packet headers */
     const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
@@ -280,7 +245,7 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet,
     int size_tcp;
     int size_payload;
 
-    printf("\nPacket number %d:\n", count);
+    //printf("\nPacket number %d:\n", count);
     count++;
 
     /* define ethernet header */
@@ -295,19 +260,6 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet,
         return;
     }
 
-    // if TCP and Ack
-    if((ip->ip_p == IPPROTO_TCP) && (tcp->th_flags) == 16)
-	printf("HTTP packet\n");
-
-    /* print source and destination IP addresses */
-    printf("       From: %s\n", inet_ntoa(ip->ip_src));
-    printf("         To: %s\n", inet_ntoa(ip->ip_dst));
-
-    printf("         ID: %d\n", (ip->ip_id));
-    printf("        Seq: %lu\n", (tcp->th_seq));
-    printf("        Ack: %lu\n", (tcp->th_ack));
-    printf("        THF: %x\n", tcp->th_flags);
-
 /*
  *      *  OK, this packet is TCP.
  *           
@@ -320,8 +272,21 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet,
         return;
     }
 
+    // if TCP and ACK
+   // if((ip->ip_p == IPPROTO_TCP) && ((tcp->th_flags) == 16))
+	//	printf("HTTP packet\n");
+/*
     printf("   Src port: %d\n", ntohs(tcp->th_sport));
     printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+
+    printf("       From: %s\n", inet_ntoa(ip->ip_src));
+    printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+
+    printf("         ID: %d\n", (ip->ip_id));
+    printf("        Seq: %lu\n", (tcp->th_seq));
+    printf("        Ack: %lu\n", (tcp->th_ack));
+    printf("        THF: %x\n", tcp->th_flags);
+*/
 
     /* define/compute tcp payload (segment) offset */
     payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
@@ -334,16 +299,28 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet,
  *           * treat it as a string.
  *                
 */
-    //if size of payload is greater than 0 and is a GET or POST request
-    if ((size_payload > 0) && (isGETPOST(payload))) {
-        printf("   Payload (%d bytes):\n", size_payload);
-		//printf("%.*s\n", strcspn(payload, "\r"), payload);
-		printf("%.*s\n", (strcspn(payload, "/")+1), payload);
+    if (size_payload > 0) {
+		http = isGETPOST(payload); 
+
+        //printf("   Payload (%d bytes):\n", size_payload);
+		//request = (strcspn(payload, "/")+1);
+
+		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
+
+		// request
+		num_request = strcspn(payload, "\r");
+		//printf("%.*s\n", num_request, payload);
+		strncpy(request_clean, payload, num_request);
+
+		// host
 		host = strstr(payload, "Host: ");
-		printf("%.*s\n", strcspn(host, "\r"), host);
-        //print_payload(payload, size_payload);
-		//printf("%x\n", init);
-    }
+		num_host = strcspn(host, "\r");
+		//printf("%.*s\n", num_host, host);
+		strncpy(host_clean, host+6, num_host-6);
+	
+		// send results in
+		Tally(init, &http, request_clean, host_clean);
+	}
 
 return;
 }
@@ -398,7 +375,6 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 		return(2);
 	}
 
-
 	/* now we can set our callback function */
 	fprintf(stderr, "Capture starting\n");
 	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)init);
@@ -435,6 +411,13 @@ int main(int argc, char *argv[])  {
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, init);
+
+	printf("Results: %s\t\tGET = %d\t\tPOST = %d\n", init->Dptr->dptr[0]->name, init->Dptr->dptr[0]->GET, init->Dptr->dptr[0]->POST);
+	printf("Request: %s\n", init->Dptr->dptr[0]->requests[0]->url);
+
+	//printf("sizeof init->Dptr->dptr: %d\n", sizeof(init->Dptr->dptr));
+	//printf("sizeof init->Dptr->dptr[0]: %d\n", sizeof(init->Dptr->dptr[0]));
+	//printf("Result: %d\n", sizeof(init->Dptr->dptr)/sizeof(init->Dptr->dptr[0]));
 
 	// free up data structures
 	TearDown(init);

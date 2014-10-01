@@ -81,6 +81,7 @@ typedef struct Init Init;
 
 struct Domains {
 	struct Domain *dptr[1];
+	int count;
 	//struct Domain *dptr;
 };
 
@@ -111,8 +112,9 @@ typedef struct Request Request;
 /*
  * allocates and creates a domain struct
 */
-void DomainCreate(Init *init, char *host)
+void AddDomain(Init *init, char *host)
 {
+	int count = init->Dptr->count;
 	Domain *domain = calloc(1, sizeof(struct Domain));
 	//init->Dptr->dptr = domain;
 	init->Dptr->dptr[0] = domain;
@@ -147,7 +149,7 @@ void DomainRemove(Domain *host)
 /*
  * checks of domain exists
 */
-int CheckIfDomainExists(Init *init, char *host)
+int CheckifDomainExists(Init *init, char *host)
 {
 	int i;
 	
@@ -170,8 +172,8 @@ int CheckIfDomainExists(Init *init, char *host)
 void Tally(Init *init, int *http, const char *request, char *host)
 {
 
-	//if(!CheckifDomainExists(init, host))
-		DomainCreate(init, host);	
+	if(!CheckifDomainExists(init, host))
+		AddDomain(init, host);	
 
 	if(*http == 1) 		
 		init->Dptr->dptr[0]->GET++;
@@ -187,6 +189,7 @@ Init *Initialize()
 	Init *init = calloc(1, sizeof(Init));
 	Domains *domains = calloc(1, sizeof(struct Domain));
 	init->Dptr = domains;
+	init->Dptr->count = 0;
 
 	return init;
 }
@@ -406,7 +409,7 @@ int main(int argc, char *argv[])  {
 
 	fprintf(stderr, "Device: %s\n", dev);
 
-	// Initilize data structures
+	// Initialize data structures
 	init = Initialize();
 
 	//promiscuous(handle, dev, errbuf);

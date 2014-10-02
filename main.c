@@ -80,8 +80,9 @@ struct Init {
 typedef struct Init Init;
 
 struct Domains {
-	struct Domain *dptr[1];
-	int count;
+	u_int count;
+	struct Domain *dptr[0];
+	//struct Domain **dptr;
 	//struct Domain *dptr;
 };
 
@@ -93,8 +94,9 @@ typedef struct Domains Domains;
 
 struct Domain {
 		u_int GET, POST;
+		u_int num_requests;
 		char name[32];
-		struct Request *requests[1];
+		struct Request *requests[0];
 };
 
 typedef struct Domain Domain;
@@ -114,32 +116,70 @@ typedef struct Request Request;
 */
 void AddDomain(Init *init, char *host)
 {
-	int count = init->Dptr->count;
-	Domain *domain = calloc(1, sizeof(struct Domain));
-	//init->Dptr->dptr = domain;
-	init->Dptr->dptr[0] = domain;
-	strncpy(init->Dptr->dptr[0]->name, host, 32);
-	//strncpy(init->Dptr->dptr->name, host, 32);
-	init->Dptr->dptr[0]->GET = 0;
-	init->Dptr->dptr[0]->POST = 0;
+	int count;
+	count = init->Dptr->count;
 
-	Request *request = calloc(1, sizeof(struct Request));
-	init->Dptr->dptr[0]->requests[0] = request;
-	init->Dptr->dptr[0]->requests[0]->count = 0;
+	// first domain
+	if (init->Dptr->count == 0) {
+
+		Domain *domain = calloc(1, sizeof(struct Domain));
+		init->Dptr->dptr[0] = domain;
+		init->Dptr->count++;
+		strncpy(init->Dptr->dptr[0]->name, host, 32);
+		init->Dptr->dptr[0]->GET = 0;
+		init->Dptr->dptr[0]->POST = 0;
+
+		Request *request = calloc(1, sizeof(struct Request));
+		init->Dptr->dptr[0]->requests[0] = request;
+		init->Dptr->dptr[0]->requests[0]->count = 0;
+		init->Dptr->dptr[0]->num_requests = 0;
+	}
+	else {
+		Domain *domain = calloc(1, sizeof(struct Domain));
+		init->Dptr->dptr[count] = domain;
+		init->Dptr->count++;
+		strncpy(init->Dptr->dptr[count]->name, host, 32);
+		init->Dptr->dptr[count]->GET = 0;
+		init->Dptr->dptr[count]->POST = 0;
+
+		Request *request = calloc(1, sizeof(struct Request));
+		init->Dptr->dptr[count]->requests[0] = request;
+		init->Dptr->dptr[count]->requests[0]->count = 0;
+		init->Dptr->dptr[count]->num_requests = 0;
+	}
 
 	return;
 }
 
-void AddRequest(Init *init, char *req)
+/*
+ * add new request
+*/
+void AddRequest(Init *init, int *index, int *request_index, const char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
-	init->Dptr->dptr[0]->requests[0] = request;
-	init->Dptr->dptr[0]->requests[0]->count = 0;
-	init->Dptr->dptr[0]->requests[0]->count++;
-	strncpy(init->Dptr->dptr[0]->requests[0]->url, req, 32);
+	init->Dptr->dptr[*index]->requests[*request_index] = request;
+	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
+	init->Dptr->dptr[*index]->requests[*request_index]->count++;
+	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+	
+	return;
 }
 
-void DomainRemove(Domain *host)
+/*
+ * increment an existing request
+*/
+void IncrementRequest(Init *init, int *index, int *request_index, const char *req)
+{
+	Request *request = calloc(1, sizeof(struct Request));
+	init->Dptr->dptr[*index]->requests[*request_index] = request;
+	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
+	init->Dptr->dptr[*index]->requests[*request_index]->count++;
+	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+	
+	return;
+}
+
+void DomainRemove(Init *init, char *host)
 {
 	free(host);
 
@@ -152,12 +192,42 @@ void DomainRemove(Domain *host)
 int CheckifDomainExists(Init *init, char *host)
 {
 	int i;
-	
-	for(i = 0; i < sizeof(init->Dptr->dptr)/sizeof(init->Dptr->dptr[0]); i++) {
-		if(strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
+
+	for(i = 0; i < init->Dptr->count; i++) {
+		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return 1;
 		else
 			return 0;
+	}
+}
+
+/*
+ * checks if request exists
+*/
+int CheckifRequestExists(Init *init, int *index, const char *request)
+{
+	int i;
+
+	for(i = 0; i < init->Dptr->dptr[*index]->num_requests; i++) {
+		if (strncmp(init->Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
+			return i;
+		else
+			return 0;
+	}
+	return 0;
+
+}
+
+/*
+ * gets index of domain 
+*/
+int GetDomainIndex(Init *init, char *host)
+{
+	int i;
+
+	for(i = 0; i < init->Dptr->count; i++) {
+		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
+			return i;
 	}
 }
 	
@@ -171,16 +241,25 @@ int CheckifDomainExists(Init *init, char *host)
  */
 void Tally(Init *init, int *http, const char *request, char *host)
 {
-
-	if(!CheckifDomainExists(init, host))
+	int index, request_index;
+	
+	if (!CheckifDomainExists(init, host))
 		AddDomain(init, host);	
 
-	if(*http == 1) 		
-		init->Dptr->dptr[0]->GET++;
-	else if(*http == 2)
-		init->Dptr->dptr[0]->POST++;
+	index = GetDomainIndex(init, host);
 
-	strncpy(init->Dptr->dptr[0]->requests[0]->url, request, 32);
+	if (*http == 1) 		
+		init->Dptr->dptr[index]->GET++;
+	else if (*http == 2)
+		init->Dptr->dptr[index]->POST++;
+
+	if (!(request_index = CheckifRequestExists(init, &index, request)))
+		AddRequest(init, &index, &request_index, request);	
+	else
+		IncrementRequest(init, &index, &request_index, request);
+
+	init->Dptr->dptr[index]->num_requests++;
+	//strncpy(init->Dptr->dptr[index]->requests[index]->url, request, 32);
 }
 
 	
@@ -209,11 +288,11 @@ void TearDown(Init *init)
 */
 int isGETPOST(const u_char *payload)
 {
-	if((payload[0] == '\x47') &&		// 'G'
+	if ((payload[0] == '\x47') &&		// 'G'
 		(payload[1] == '\x45') &&		// 'E'
 		(payload[2] == '\x54'))			// 'T'
 			return 1;
-	else if((payload[0] == '\x50') && 	// 'P'
+	else if ((payload[0] == '\x50') && 	// 'P'
 		(payload[1] == '\x4f') &&		// 'O'
 		(payload[2] == '\x53') &&		// 'S'
 		(payload[3] == '\x54'))			// 'T'
@@ -302,12 +381,9 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
  *           * treat it as a string.
  *                
 */
-    if (size_payload > 0) {
-		http = isGETPOST(payload); 
-
+    if ((size_payload > 0) && (http = isGETPOST(payload) != 0)){
         //printf("   Payload (%d bytes):\n", size_payload);
 		//request = (strcspn(payload, "/")+1);
-
 		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
 
 		// request
@@ -357,7 +433,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 5;           /* number of packets to capture */
+	int num_packets = 50;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -393,6 +469,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 
 int main(int argc, char *argv[])  {
 
+	int i, j;
 	pcap_t *handle;
 
 	Init *init;
@@ -415,12 +492,15 @@ int main(int argc, char *argv[])  {
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, init);
 
-	printf("Results: %s\t\tGET = %d\t\tPOST = %d\n", init->Dptr->dptr[0]->name, init->Dptr->dptr[0]->GET, init->Dptr->dptr[0]->POST);
-	printf("Request: %s\n", init->Dptr->dptr[0]->requests[0]->url);
+	// display results
+	for(i = 0; i < init->Dptr->count; i++) {
+		//printf("Host: %s\t\tRequest: %s\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->requests[0]->url);
+		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
+		printf("Requests:\n");
+		for(j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
+			printf("%s\n", init->Dptr->dptr[i]->requests[j]->url);
+	}
 
-	//printf("sizeof init->Dptr->dptr: %d\n", sizeof(init->Dptr->dptr));
-	//printf("sizeof init->Dptr->dptr[0]: %d\n", sizeof(init->Dptr->dptr[0]));
-	//printf("Result: %d\n", sizeof(init->Dptr->dptr)/sizeof(init->Dptr->dptr[0]));
 
 	// free up data structures
 	TearDown(init);

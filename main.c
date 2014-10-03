@@ -89,7 +89,6 @@ typedef struct Domains Domains;
 /*
  * struct to store data on domain
 */
-
 struct Domain {
 		u_int GET, POST;
 		u_int num_requests;
@@ -118,30 +117,14 @@ void AddDomain(Init *init, char *host)
 	int count;
 	count = init->Dptr->count;
 
-	// first domain
-	if (init->Dptr->count == 0) {
-
-		Domain *domain = calloc(1, sizeof(struct Domain));
-		init->Dptr->dptr[0] = domain;
-		init->Dptr->count++;
-		strncpy(init->Dptr->dptr[0]->name, host, 32);
-		init->Dptr->dptr[0]->GET = 0;
-		init->Dptr->dptr[0]->POST = 0;
-
-		Request *request = calloc(1, sizeof(struct Request));
-		init->Dptr->dptr[0]->requests[0] = request;
-		init->Dptr->dptr[0]->requests[0]->count = 0;
-		init->Dptr->dptr[0]->num_requests = 0;
-		init->Dptr->dptr[0]->total_requests = 0;
-	}
-	else {
-		Domain *domain = calloc(1, sizeof(struct Domain));
-		init->Dptr->dptr[count] = domain;
-		init->Dptr->count++;
-		strncpy(init->Dptr->dptr[count]->name, host, 32);
-		init->Dptr->dptr[count]->GET = 0;
-		init->Dptr->dptr[count]->POST = 0;
-	}
+	Domain *domain = calloc(1, sizeof(struct Domain));
+	init->Dptr->dptr[count] = domain;
+	init->Dptr->count++;
+	strncpy(init->Dptr->dptr[count]->name, host, 32);
+	init->Dptr->dptr[count]->GET = 0;
+	init->Dptr->dptr[count]->POST = 0;
+	init->Dptr->dptr[count]->num_requests = 0;
+	init->Dptr->dptr[count]->total_requests = 0;
 
 	return;
 }
@@ -151,16 +134,6 @@ void AddDomain(Init *init, char *host)
 */
 void AddRequest(Init *init, int *index, int *request_index, const char *req)
 {
-	if (init->Dptr->dptr[*index]->num_requests == 0) {
-	Request *request = calloc(1, sizeof(struct Request));
-	init->Dptr->dptr[*index]->requests[0] = request;
-	init->Dptr->dptr[*index]->num_requests++;
-	init->Dptr->dptr[*index]->total_requests++;
-	init->Dptr->dptr[*index]->requests[0]->count = 0;
-	init->Dptr->dptr[*index]->requests[0]->count++;
-	strncpy(init->Dptr->dptr[*index]->requests[0]->url, req, 32);
-	}
-	else {
 	Request *request = calloc(1, sizeof(struct Request));
 	init->Dptr->dptr[*index]->requests[*request_index] = request;
 	init->Dptr->dptr[*index]->num_requests++;
@@ -168,7 +141,6 @@ void AddRequest(Init *init, int *index, int *request_index, const char *req)
 	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
 	init->Dptr->dptr[*index]->requests[*request_index]->count++;
 	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
-	}
 	
 	return;
 }
@@ -204,6 +176,7 @@ int CheckifDomainExists(Init *init, char *host)
 		else
 			return 0;
 	}
+	return 0;
 }
 
 /*
@@ -258,11 +231,12 @@ void Tally(Init *init, int *http, const char *request, char *host)
 	else if (*http == 2)
 		init->Dptr->dptr[index]->POST++;
 
-	if ((request_index = CheckifRequestExists(init, &index, request)) == -1) {
+	//if (( CheckifRequestExists(init, &index, request)) == -1) {
+	if (request_index = CheckifRequestExists(init, &index, request)) {
 
 		// setting request_index to 0 so that AddRequest won't add a request using index -1
 		if (request_index == -1)
-			request_index = 0;
+			request_index = init->Dptr->dptr[index]->num_requests;
 		
 		AddRequest(init, &index, &request_index, request);	
 	}
@@ -285,6 +259,21 @@ Init *Initialize()
 
 void TearDown(Init *init)
 {
+	int i, j, domains = 0, requests = 0;
+
+	domains = init->Dptr->count;
+	
+	for (i = 0; i < domains; i++)
+		requests += init->Dptr->dptr[i]->num_requests;
+
+	for (i = 0; i < domains; i++)
+		for (j = 0; j < requests; j++)
+			free(init->Dptr->dptr[i]->requests[j]);
+
+	for (i = 0; i < domains; i++)
+		free(init->Dptr->dptr[i]);
+
+	
 	free(init->Dptr);
 	free(init);
 	
@@ -451,7 +440,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 25;           /* number of packets to capture */
+	int num_packets = 14;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);

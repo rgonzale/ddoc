@@ -82,8 +82,6 @@ typedef struct Init Init;
 struct Domains {
 	u_int count;
 	struct Domain *dptr[0];
-	//struct Domain **dptr;
-	//struct Domain *dptr;
 };
 
 typedef struct Domains Domains;
@@ -95,6 +93,7 @@ typedef struct Domains Domains;
 struct Domain {
 		u_int GET, POST;
 		u_int num_requests;
+		u_int total_requests;
 		char name[32];
 		struct Request *requests[0];
 };
@@ -133,6 +132,7 @@ void AddDomain(Init *init, char *host)
 		init->Dptr->dptr[0]->requests[0] = request;
 		init->Dptr->dptr[0]->requests[0]->count = 0;
 		init->Dptr->dptr[0]->num_requests = 0;
+		init->Dptr->dptr[0]->total_requests = 0;
 	}
 	else {
 		Domain *domain = calloc(1, sizeof(struct Domain));
@@ -141,11 +141,6 @@ void AddDomain(Init *init, char *host)
 		strncpy(init->Dptr->dptr[count]->name, host, 32);
 		init->Dptr->dptr[count]->GET = 0;
 		init->Dptr->dptr[count]->POST = 0;
-
-		Request *request = calloc(1, sizeof(struct Request));
-		init->Dptr->dptr[count]->requests[0] = request;
-		init->Dptr->dptr[count]->requests[0]->count = 0;
-		init->Dptr->dptr[count]->num_requests = 0;
 	}
 
 	return;
@@ -156,11 +151,24 @@ void AddDomain(Init *init, char *host)
 */
 void AddRequest(Init *init, int *index, int *request_index, const char *req)
 {
+	if (init->Dptr->dptr[*index]->num_requests == 0) {
+	Request *request = calloc(1, sizeof(struct Request));
+	init->Dptr->dptr[*index]->requests[0] = request;
+	init->Dptr->dptr[*index]->num_requests++;
+	init->Dptr->dptr[*index]->total_requests++;
+	init->Dptr->dptr[*index]->requests[0]->count = 0;
+	init->Dptr->dptr[*index]->requests[0]->count++;
+	strncpy(init->Dptr->dptr[*index]->requests[0]->url, req, 32);
+	}
+	else {
 	Request *request = calloc(1, sizeof(struct Request));
 	init->Dptr->dptr[*index]->requests[*request_index] = request;
+	init->Dptr->dptr[*index]->num_requests++;
+	init->Dptr->dptr[*index]->total_requests++;
 	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
 	init->Dptr->dptr[*index]->requests[*request_index]->count++;
 	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+	}
 	
 	return;
 }
@@ -170,11 +178,8 @@ void AddRequest(Init *init, int *index, int *request_index, const char *req)
 */
 void IncrementRequest(Init *init, int *index, int *request_index, const char *req)
 {
-	Request *request = calloc(1, sizeof(struct Request));
-	init->Dptr->dptr[*index]->requests[*request_index] = request;
-	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
+	init->Dptr->dptr[*index]->total_requests++;
 	init->Dptr->dptr[*index]->requests[*request_index]->count++;
-	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
 	
 	return;
 }
@@ -193,7 +198,7 @@ int CheckifDomainExists(Init *init, char *host)
 {
 	int i;
 
-	for(i = 0; i < init->Dptr->count; i++) {
+	for (i = 0; i < init->Dptr->count; i++) {
 		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return 1;
 		else
@@ -208,13 +213,13 @@ int CheckifRequestExists(Init *init, int *index, const char *request)
 {
 	int i;
 
-	for(i = 0; i < init->Dptr->dptr[*index]->num_requests; i++) {
+	for (i = 0; i < init->Dptr->dptr[*index]->num_requests; i++) {
 		if (strncmp(init->Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
 			return i;
 		else
-			return 0;
+			return -1;
 	}
-	return 0;
+	return -1;
 
 }
 
@@ -225,7 +230,7 @@ int GetDomainIndex(Init *init, char *host)
 {
 	int i;
 
-	for(i = 0; i < init->Dptr->count; i++) {
+	for (i = 0; i < init->Dptr->count; i++) {
 		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return i;
 	}
@@ -253,13 +258,18 @@ void Tally(Init *init, int *http, const char *request, char *host)
 	else if (*http == 2)
 		init->Dptr->dptr[index]->POST++;
 
-	if (!(request_index = CheckifRequestExists(init, &index, request)))
-		AddRequest(init, &index, &request_index, request);	
-	else
-		IncrementRequest(init, &index, &request_index, request);
+	if ((request_index = CheckifRequestExists(init, &index, request)) == -1) {
 
-	init->Dptr->dptr[index]->num_requests++;
-	//strncpy(init->Dptr->dptr[index]->requests[index]->url, request, 32);
+		// setting request_index to 0 so that AddRequest won't add a request using index -1
+		if (request_index == -1)
+			request_index = 0;
+		
+		AddRequest(init, &index, &request_index, request);	
+	}
+	else {
+		IncrementRequest(init, &index, &request_index, request);
+	}
+	return;
 }
 
 	
@@ -288,17 +298,24 @@ void TearDown(Init *init)
 */
 int isGETPOST(const u_char *payload)
 {
-	if ((payload[0] == '\x47') &&		// 'G'
-		(payload[1] == '\x45') &&		// 'E'
-		(payload[2] == '\x54'))			// 'T'
+/*
+	if (strncpy((char *)payload, "GET", 3) == 0)
+		return 1;
+	else if (strncpy((char *)payload, "POST", 4) == 0)
+		return 2;
+	else
+		return 0;
+*/
+
+	// GET
+	if ((payload[0] == '\x47') && (payload[1] == '\x45') && (payload[2] == '\x54'))
 			return 1;
-	else if ((payload[0] == '\x50') && 	// 'P'
-		(payload[1] == '\x4f') &&		// 'O'
-		(payload[2] == '\x53') &&		// 'S'
-		(payload[3] == '\x54'))			// 'T'
+	// POST
+	else if ((payload[0] == '\x50') && (payload[1] == '\x4f') && (payload[2] == '\x53') && (payload[3] == '\x54'))
 			return 2;
 	else
 		return 0;
+
 }
 
 /*
@@ -381,7 +398,8 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
  *           * treat it as a string.
  *                
 */
-    if ((size_payload > 0) && (http = isGETPOST(payload) != 0)){
+    //if ((size_payload > 0) && (http = isGETPOST(payload) != 0)){
+    if ((size_payload > 0) && (http = isGETPOST(payload))){
         //printf("   Payload (%d bytes):\n", size_payload);
 		//request = (strcspn(payload, "/")+1);
 		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
@@ -433,7 +451,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 50;           /* number of packets to capture */
+	int num_packets = 25;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -469,7 +487,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 
 int main(int argc, char *argv[])  {
 
-	int i, j;
+	int i, j, k;
 	pcap_t *handle;
 
 	Init *init;
@@ -493,12 +511,11 @@ int main(int argc, char *argv[])  {
 	capture(handle, dev, errbuf, init);
 
 	// display results
-	for(i = 0; i < init->Dptr->count; i++) {
-		//printf("Host: %s\t\tRequest: %s\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->requests[0]->url);
+	for (i = 0; i < init->Dptr->count; i++) {
 		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
-		printf("Requests:\n");
-		for(j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
-			printf("%s\n", init->Dptr->dptr[i]->requests[j]->url);
+		printf("Number of HTTP Requests: %d\t", init->Dptr->dptr[i]->total_requests);
+		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
+			printf("%s\tcount: %d\n", init->Dptr->dptr[i]->requests[j]->url, init->Dptr->dptr[i]->requests[j]->count);
 	}
 
 

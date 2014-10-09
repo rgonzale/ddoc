@@ -19,6 +19,12 @@
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN  6
 
+/* Maximum number of Domains */
+#define DOMAINS 1024
+
+/* Maximum number of Requests per Domain */
+#define REQUESTS 1024
+
 /* Ethernet header */
 struct sniff_ethernet {
         u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
@@ -81,7 +87,7 @@ typedef struct Init Init;
 
 struct Domains {
 	u_int count;
-	struct Domain *dptr[0];
+	struct Domain *dptr[DOMAINS];
 };
 
 typedef struct Domains Domains;
@@ -94,7 +100,7 @@ struct Domain {
 		u_int num_requests;
 		u_int total_requests;
 		char name[32];
-		struct Request *requests[0];
+		struct Request *requests[REQUESTS];
 };
 
 typedef struct Domain Domain;
@@ -118,6 +124,7 @@ void AddDomain(Init *init, char *host)
 	count = init->Dptr->count;
 
 	Domain *domain = calloc(1, sizeof(struct Domain));
+	
 	init->Dptr->dptr[count] = domain;
 	init->Dptr->count++;
 	strncpy(init->Dptr->dptr[count]->name, host, 32);
@@ -135,6 +142,7 @@ void AddDomain(Init *init, char *host)
 void AddRequest(Init *init, int *index, int *request_index, const char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
+
 	init->Dptr->dptr[*index]->requests[*request_index] = request;
 	init->Dptr->dptr[*index]->num_requests++;
 	init->Dptr->dptr[*index]->total_requests++;
@@ -207,6 +215,8 @@ int GetDomainIndex(Init *init, char *host)
 		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return i;
 	}
+	// didn't find domain
+	return -1;
 }
 	
 /*
@@ -231,8 +241,7 @@ void Tally(Init *init, int *http, const char *request, char *host)
 	else if (*http == 2)
 		init->Dptr->dptr[index]->POST++;
 
-	//if (( CheckifRequestExists(init, &index, request)) == -1) {
-	if (request_index = CheckifRequestExists(init, &index, request)) {
+	if ((request_index = CheckifRequestExists(init, &index, request))) {
 
 		// setting request_index to 0 so that AddRequest won't add a request using index -1
 		if (request_index == -1)
@@ -259,21 +268,25 @@ Init *Initialize()
 
 void TearDown(Init *init)
 {
-	int i, j, domains = 0, requests = 0;
+	int i, j, domains = 0;
 
 	domains = init->Dptr->count;
 	
 	for (i = 0; i < domains; i++)
-		requests += init->Dptr->dptr[i]->num_requests;
-
-	for (i = 0; i < domains; i++)
-		for (j = 0; j < requests; j++)
+		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
 			free(init->Dptr->dptr[i]->requests[j]);
 
 	for (i = 0; i < domains; i++)
 		free(init->Dptr->dptr[i]);
 
+/*
+	free(init->Dptr->dptr[0]->requests[0]);
+	free(init->Dptr->dptr[1]->requests[0]);
 	
+	free(init->Dptr->dptr[0]);
+	free(init->Dptr->dptr[1]);
+*/
+
 	free(init->Dptr);
 	free(init);
 	
@@ -387,8 +400,8 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
  *           * treat it as a string.
  *                
 */
-    //if ((size_payload > 0) && (http = isGETPOST(payload) != 0)){
-    if ((size_payload > 0) && (http = isGETPOST(payload))){
+    if ((size_payload > 0) && (http = isGETPOST(payload))) {
+
         //printf("   Payload (%d bytes):\n", size_payload);
 		//request = (strcspn(payload, "/")+1);
 		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
@@ -401,9 +414,9 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 		// host
 		host = strstr(payload, "Host: ");
 		num_host = strcspn(host, "\r");
-		//printf("%.*s\n", num_host, host);
+		memset(host_clean, '\0', 32);
 		strncpy(host_clean, host+6, num_host-6);
-	
+
 		// send results in
 		Tally(init, &http, request_clean, host_clean);
 	}
@@ -440,7 +453,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 14;           /* number of packets to capture */
+	int num_packets = 100;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -467,7 +480,9 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 
 	/* cleanup */
 	pcap_freecode(&fp);
-	pcap_close(handle);
+
+	if (handle != NULL)
+		pcap_close(handle);
 
 	printf("\nCapture complete.\n");
 
@@ -477,7 +492,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 int main(int argc, char *argv[])  {
 
 	int i, j, k;
-	pcap_t *handle;
+	pcap_t *handle = NULL;
 
 	Init *init;
 
@@ -502,14 +517,17 @@ int main(int argc, char *argv[])  {
 	// display results
 	for (i = 0; i < init->Dptr->count; i++) {
 		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
-		printf("Number of HTTP Requests: %d\t", init->Dptr->dptr[i]->total_requests);
 		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
 			printf("%s\tcount: %d\n", init->Dptr->dptr[i]->requests[j]->url, init->Dptr->dptr[i]->requests[j]->count);
 	}
-
+	printf("\n");
+	printf("number of domains: %d\n", init->Dptr->count);
 
 	// free up data structures
 	TearDown(init);
+
+	printf("sizeof struct domain: %d\n", sizeof(struct Domain));
+	printf("sizeof struct request: %d\n", sizeof(struct Request));
 
 	return(0);
 }

@@ -133,13 +133,15 @@ void AddDomain(Init *init, char *host)
 	init->Dptr->dptr[count]->num_requests = 0;
 	init->Dptr->dptr[count]->total_requests = 0;
 
+	memset(host, '\0', 32);
+
 	return;
 }
 
 /*
  * add new request
 */
-void AddRequest(Init *init, int *index, int *request_index, const char *req)
+void AddRequest(Init *init, int *index, int *request_index, char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
 
@@ -149,6 +151,8 @@ void AddRequest(Init *init, int *index, int *request_index, const char *req)
 	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
 	init->Dptr->dptr[*index]->requests[*request_index]->count++;
 	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+
+	memset(req, '\0', 32);
 	
 	return;
 }
@@ -181,8 +185,6 @@ int CheckifDomainExists(Init *init, char *host)
 	for (i = 0; i < init->Dptr->count; i++) {
 		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return 1;
-		else
-			return 0;
 	}
 	return 0;
 }
@@ -197,8 +199,6 @@ int CheckifRequestExists(Init *init, int *index, const char *request)
 	for (i = 0; i < init->Dptr->dptr[*index]->num_requests; i++) {
 		if (strncmp(init->Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
 			return i;
-		else
-			return -1;
 	}
 	return -1;
 
@@ -227,7 +227,7 @@ int GetDomainIndex(Init *init, char *host)
  * host: darkterminal.net
  * 
  */
-void Tally(Init *init, int *http, const char *request, char *host)
+void Tally(Init *init, int *http, char *request, char *host)
 {
 	int index, request_index;
 	
@@ -241,11 +241,11 @@ void Tally(Init *init, int *http, const char *request, char *host)
 	else if (*http == 2)
 		init->Dptr->dptr[index]->POST++;
 
-	if ((request_index = CheckifRequestExists(init, &index, request))) {
+	request_index = CheckifRequestExists(init, &index, request);
 
-		// setting request_index to 0 so that AddRequest won't add a request using index -1
-		if (request_index == -1)
-			request_index = init->Dptr->dptr[index]->num_requests;
+	// if request not found set to -1 and set to num_requests when adding a new one
+	if (request_index == -1) {
+		request_index = init->Dptr->dptr[index]->num_requests;
 		
 		AddRequest(init, &index, &request_index, request);	
 	}
@@ -319,6 +319,33 @@ int isGETPOST(const u_char *payload)
 		return 0;
 
 }
+
+#define SSL_MIN_GOOD_VERSION 0x002
+#define SSL_MAX_GOOD_VERSION 0x304 // let's be optimistic here!
+#define TLS_HANDSHAKE 22
+#define TLS_CLIENT_HELLO 1
+#define TLS_SERVER_HELLO 2
+#define OFFSET_HELLO_VERSION 9
+#define OFFSET_SESSION_LENGTH 43
+#define OFFSET_CIPHER_LIST 44
+
+/* ssl defintiions
+char* ssl_version(u_short version) {
+
+	static char hex[7];
+
+	switch (version) {
+		case 0x002: return "SSLv2";
+		case 0x300: return "SSLv3";
+		case 0x301: return "TLSv1";
+		case 0x302: return "TLSv1.1";
+		case 0x303: return "TLSv1.2";
+	}
+	snprintf(hex, sizeof(hex), "0x%04hx", version);
+
+	return hex;
+}
+*/ // end of ssl definitions
 
 /*
  *  * dissect/print packet
@@ -395,6 +422,66 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
     /* compute tcp payload (segment) size */
     size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 
+	/* START OF SSL
+	if (payload[0] != TLS_HANDSHAKE) {
+		printf("Not a TLS handshake: 0x%02hhx\n", payload[0]);
+		return;
+	}
+
+	if (size_payload < OFFSET_CIPHER_LIST + 3) { // at least one cipher + compression
+		printf("TLS handshake header too short: %u bytes\n", size_tcp);
+		return;
+	}
+
+	u_short proto_version = payload[1]*256 + payload[2];
+	printf("%s ", ssl_version(proto_version));
+	u_short hello_version = payload[OFFSET_HELLO_VERSION]*256 + payload[OFFSET_HELLO_VERSION+1];
+
+	if (proto_version < SSL_MIN_GOOD_VERSION || proto_version >= SSL_MAX_GOOD_VERSION ||
+		hello_version < SSL_MIN_GOOD_VERSION || hello_version >= SSL_MAX_GOOD_VERSION) {
+		printf("%s bad version(s)\n", ssl_version(hello_version));
+		return;
+	}
+
+	// skip session ID
+	const u_char *cipher_data = &payload[OFFSET_SESSION_LENGTH];
+	#ifdef LOG_SESSIONID
+	if (cipher_data[0] != 0) {
+		printf("SID[%hhu] ", cipher_data[0]);
+	}
+	#endif
+
+	if (size_payload < OFFSET_SESSION_LENGTH + cipher_data[0] + 3) {
+	printf("SessionID too long: %hhu bytes\n", cipher_data[0]);
+	return;
+	}
+
+	cipher_data += 1 + cipher_data[0];
+
+	switch (payload[5]) {
+	case TLS_CLIENT_HELLO:
+		printf("ClientHello %s ", ssl_version(hello_version));
+		u_short cs_len = cipher_data[0]*256 + cipher_data[1];
+		cipher_data += 2; // skip cipher suites length
+		// FIXME: check for buffer overruns
+		int cs_id;
+		for (cs_id = 0; cs_id < cs_len/2; cs_id++)
+			printf(":%02hhX%02hhX", cipher_data[2*cs_id], cipher_data[2*cs_id + 1]);
+			printf(":\n");
+			break;
+
+	case TLS_SERVER_HELLO:
+		printf("ServerHello %s ", ssl_version(hello_version));
+		printf("cipher %02hhX%02hhX\n", cipher_data[0], cipher_data[1]);
+		printf("%s\n", payload);
+		break;
+
+	default:
+		printf("Not a Hello\n");
+		return;
+	}
+	*/  //END OF SSL
+
 /*
  *      * Print payload data; it might be binary, so don't just
  *           * treat it as a string.
@@ -414,11 +501,13 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 		// host
 		host = strstr(payload, "Host: ");
 		num_host = strcspn(host, "\r");
-		memset(host_clean, '\0', 32);
+		//memset(host_clean, '\0', 32);
 		strncpy(host_clean, host+6, num_host-6);
 
 		// send results in
 		Tally(init, &http, request_clean, host_clean);
+		memset(host_clean, '\0', 32);
+		memset(request_clean, '\0', 32);
 	}
 
 return;
@@ -453,7 +542,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 100;           /* number of packets to capture */
+	int num_packets = 50;           /* number of packets to capture */
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -518,7 +607,8 @@ int main(int argc, char *argv[])  {
 	for (i = 0; i < init->Dptr->count; i++) {
 		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
 		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
-			printf("%s\tcount: %d\n", init->Dptr->dptr[i]->requests[j]->url, init->Dptr->dptr[i]->requests[j]->count);
+			//printf("%s\tcount: %d\n", init->Dptr->dptr[i]->requests[j]->url, init->Dptr->dptr[i]->requests[j]->count);
+			printf("count: %d\t%s\n", init->Dptr->dptr[i]->requests[j]->count, init->Dptr->dptr[i]->requests[j]->url);
 	}
 	printf("\n");
 	printf("number of domains: %d\n", init->Dptr->count);
@@ -526,8 +616,8 @@ int main(int argc, char *argv[])  {
 	// free up data structures
 	TearDown(init);
 
-	printf("sizeof struct domain: %d\n", sizeof(struct Domain));
-	printf("sizeof struct request: %d\n", sizeof(struct Request));
+	printf("sizeof struct domain: %d bytes\n", sizeof(struct Domain));
+	printf("sizeof struct request: %d bytes\n", sizeof(struct Request));
 
 	return(0);
 }

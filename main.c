@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ncurses.h>
+#include <signal.h>
 
 /* default snap length (maximum bytes per packet to capture) */
 #define SNAP_LEN 1518
@@ -24,6 +26,9 @@
 
 /* Maximum number of Requests per Domain */
 #define REQUESTS 1024
+
+// main array for NcursesUpdate
+struct Domain *darray[DOMAINS];
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -133,8 +138,6 @@ void AddDomain(Init *init, char *host)
 	init->Dptr->dptr[count]->num_requests = 0;
 	init->Dptr->dptr[count]->total_requests = 0;
 
-	memset(host, '\0', 32);
-
 	return;
 }
 
@@ -151,8 +154,6 @@ void AddRequest(Init *init, int *index, int *request_index, char *req)
 	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
 	init->Dptr->dptr[*index]->requests[*request_index]->count++;
 	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
-
-	memset(req, '\0', 32);
 	
 	return;
 }
@@ -218,6 +219,43 @@ int GetDomainIndex(Init *init, char *host)
 	// didn't find domain
 	return -1;
 }
+
+/*
+ * sorting function
+ */
+void sortDomains(Init *init, int *index)
+{
+	int i;
+	struct Domain *tmp;
+		for (i = *index; i > 0; i--) {
+			if (init->Dptr->dptr[i]->total_requests > init->Dptr->dptr[i-1]->total_requests) {
+				tmp = init->Dptr->dptr[i];
+				init->Dptr->dptr[i] = init->Dptr->dptr[i-1];
+				init->Dptr->dptr[i-1] = tmp;	
+			}
+	}
+}
+
+/*
+ * main Ncurses update
+ */
+void NcursesUpdate(Init *init)
+{
+	int i;
+
+	move(0,0);
+	addstr("Total Requests\tGET\t\tPOST\t\tDomain\n");
+	for (i = 0; i < init->Dptr->count; i++)
+	//for (i = init->Dptr->count - 1; i > -1; i--)
+		printw("%d\t\t%d\t\t%d\t\t%s\n", 	init->Dptr->dptr[i]->total_requests, 
+											init->Dptr->dptr[i]->GET, 
+											init->Dptr->dptr[i]->POST, 
+											init->Dptr->dptr[i]->name);
+
+	refresh();
+
+}
+
 	
 /*
  * executes accounting
@@ -252,9 +290,15 @@ void Tally(Init *init, int *http, char *request, char *host)
 	else {
 		IncrementRequest(init, &index, &request_index, request);
 	}
+
+	// sort the domains
+	if (init->Dptr->count > 1 && index != 0)
+		sortDomains(init, &index);
+
+	// call main update ncurses function
+	NcursesUpdate(init);
 	return;
 }
-
 	
 Init *Initialize()
 {
@@ -320,6 +364,7 @@ int isGETPOST(const u_char *payload)
 
 }
 
+/* ssl defintiions
 #define SSL_MIN_GOOD_VERSION 0x002
 #define SSL_MAX_GOOD_VERSION 0x304 // let's be optimistic here!
 #define TLS_HANDSHAKE 22
@@ -329,7 +374,6 @@ int isGETPOST(const u_char *payload)
 #define OFFSET_SESSION_LENGTH 43
 #define OFFSET_CIPHER_LIST 44
 
-/* ssl defintiions
 char* ssl_version(u_short version) {
 
 	static char hex[7];
@@ -489,6 +533,8 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 */
     if ((size_payload > 0) && (http = isGETPOST(payload))) {
 
+		memset(host_clean, '\0', 32);
+		memset(request_clean, '\0', 32);
         //printf("   Payload (%d bytes):\n", size_payload);
 		//request = (strcspn(payload, "/")+1);
 		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
@@ -506,8 +552,6 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 
 		// send results in
 		Tally(init, &http, request_clean, host_clean);
-		memset(host_clean, '\0', 32);
-		memset(request_clean, '\0', 32);
 	}
 
 return;
@@ -542,7 +586,22 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
-	int num_packets = 50;           /* number of packets to capture */
+	int num_packets = 0;           /* number of packets to capture */
+
+	// catch Cntrl-C
+	void mysighand(int signum) {
+        if (signum == 2) {
+            addstr("Catching SIGINT\nShutting Down\n");
+			refresh();
+			sleep(1);
+            TearDown(init);
+			endwin();
+            exit(1);
+        }
+	}
+
+	// set control-c handler
+	signal(SIGINT, mysighand);
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -563,8 +622,16 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 		return(2);
 	}
 
+
+	// Start up Ncurses and clear screen
+	initscr();
+
+	move(0,0);
+	waddstr(stdscr, "Capture starting\n");
+	refresh();
+
+
 	/* now we can set our callback function */
-	fprintf(stderr, "Capture starting\n");
 	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)init);
 
 	/* cleanup */
@@ -603,6 +670,7 @@ int main(int argc, char *argv[])  {
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, init);
 
+/*
 	// display results
 	for (i = 0; i < init->Dptr->count; i++) {
 		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
@@ -612,12 +680,13 @@ int main(int argc, char *argv[])  {
 	}
 	printf("\n");
 	printf("number of domains: %d\n", init->Dptr->count);
+*/
 
 	// free up data structures
 	TearDown(init);
 
-	printf("sizeof struct domain: %d bytes\n", sizeof(struct Domain));
-	printf("sizeof struct request: %d bytes\n", sizeof(struct Request));
+	// Cleanup Ncurses
+	endwin();
 
 	return(0);
 }

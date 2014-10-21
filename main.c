@@ -27,9 +27,6 @@
 /* Maximum number of Requests per Domain */
 #define REQUESTS 1024
 
-// main array for NcursesUpdate
-struct Domain *darray[DOMAINS];
-
 /* Ethernet header */
 struct sniff_ethernet {
         u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
@@ -82,14 +79,8 @@ struct sniff_tcp {
 };
 
 /*
- * main struct that is at the top
+ * main struct that is at the top of all the data structures
 */
-struct Init {
-		struct Domains *Dptr;
-};
-
-typedef struct Init Init;
-
 struct Domains {
 	u_int count;
 	struct Domain *dptr[DOMAINS];
@@ -123,20 +114,20 @@ typedef struct Request Request;
 /*
  * allocates and creates a domain struct
 */
-void AddDomain(Init *init, char *host)
+void AddDomain(Domains *Dptr, char *host)
 {
 	int count;
-	count = init->Dptr->count;
+	count = Dptr->count;
 
 	Domain *domain = calloc(1, sizeof(struct Domain));
 	
-	init->Dptr->dptr[count] = domain;
-	init->Dptr->count++;
-	strncpy(init->Dptr->dptr[count]->name, host, 32);
-	init->Dptr->dptr[count]->GET = 0;
-	init->Dptr->dptr[count]->POST = 0;
-	init->Dptr->dptr[count]->num_requests = 0;
-	init->Dptr->dptr[count]->total_requests = 0;
+	Dptr->dptr[count] = domain;
+	Dptr->count++;
+	strncpy(Dptr->dptr[count]->name, host, 32);
+	Dptr->dptr[count]->GET = 0;
+	Dptr->dptr[count]->POST = 0;
+	Dptr->dptr[count]->num_requests = 0;
+	Dptr->dptr[count]->total_requests = 0;
 
 	return;
 }
@@ -144,16 +135,16 @@ void AddDomain(Init *init, char *host)
 /*
  * add new request
 */
-void AddRequest(Init *init, int *index, int *request_index, char *req)
+void AddRequest(Domains *Dptr, int *index, int *request_index, char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
 
-	init->Dptr->dptr[*index]->requests[*request_index] = request;
-	init->Dptr->dptr[*index]->num_requests++;
-	init->Dptr->dptr[*index]->total_requests++;
-	init->Dptr->dptr[*index]->requests[*request_index]->count = 0;
-	init->Dptr->dptr[*index]->requests[*request_index]->count++;
-	strncpy(init->Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+	Dptr->dptr[*index]->requests[*request_index] = request;
+	Dptr->dptr[*index]->num_requests++;
+	Dptr->dptr[*index]->total_requests++;
+	Dptr->dptr[*index]->requests[*request_index]->count = 0;
+	Dptr->dptr[*index]->requests[*request_index]->count++;
+	strncpy(Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
 	
 	return;
 }
@@ -161,30 +152,23 @@ void AddRequest(Init *init, int *index, int *request_index, char *req)
 /*
  * increment an existing request
 */
-void IncrementRequest(Init *init, int *index, int *request_index, const char *req)
+void IncrementRequest(Domains *Dptr, int *index, int *request_index, const char *req)
 {
-	init->Dptr->dptr[*index]->total_requests++;
-	init->Dptr->dptr[*index]->requests[*request_index]->count++;
+	Dptr->dptr[*index]->total_requests++;
+	Dptr->dptr[*index]->requests[*request_index]->count++;
 	
-	return;
-}
-
-void DomainRemove(Init *init, char *host)
-{
-	free(host);
-
 	return;
 }
 
 /*
  * checks of domain exists
 */
-int CheckifDomainExists(Init *init, char *host)
+int CheckifDomainExists(Domains *Dptr, char *host)
 {
 	int i;
 
-	for (i = 0; i < init->Dptr->count; i++) {
-		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
+	for (i = 0; i < Dptr->count; i++) {
+		if (strncmp(Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return 1;
 	}
 	return 0;
@@ -193,12 +177,12 @@ int CheckifDomainExists(Init *init, char *host)
 /*
  * checks if request exists
 */
-int CheckifRequestExists(Init *init, int *index, const char *request)
+int CheckifRequestExists(Domains *Dptr, int *index, const char *request)
 {
 	int i;
 
-	for (i = 0; i < init->Dptr->dptr[*index]->num_requests; i++) {
-		if (strncmp(init->Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
+	for (i = 0; i < Dptr->dptr[*index]->num_requests; i++) {
+		if (strncmp(Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
 			return i;
 	}
 	return -1;
@@ -208,12 +192,12 @@ int CheckifRequestExists(Init *init, int *index, const char *request)
 /*
  * gets index of domain 
 */
-int GetDomainIndex(Init *init, char *host)
+int GetDomainIndex(Domains *Dptr, char *host)
 {
 	int i;
 
-	for (i = 0; i < init->Dptr->count; i++) {
-		if (strncmp(init->Dptr->dptr[i]->name, host, strlen(host)) == 0)
+	for (i = 0; i < Dptr->count; i++) {
+		if (strncmp(Dptr->dptr[i]->name, host, strlen(host)) == 0)
 			return i;
 	}
 	// didn't find domain
@@ -223,15 +207,15 @@ int GetDomainIndex(Init *init, char *host)
 /*
  * sorting function
  */
-void sortDomains(Init *init, int *index)
+void sortDomains(Domains *Dptr, int *index)
 {
 	int i;
 	struct Domain *tmp;
 		for (i = *index; i > 0; i--) {
-			if (init->Dptr->dptr[i]->total_requests > init->Dptr->dptr[i-1]->total_requests) {
-				tmp = init->Dptr->dptr[i];
-				init->Dptr->dptr[i] = init->Dptr->dptr[i-1];
-				init->Dptr->dptr[i-1] = tmp;	
+			if (Dptr->dptr[i]->total_requests > Dptr->dptr[i-1]->total_requests) {
+				tmp = Dptr->dptr[i];
+				Dptr->dptr[i] = Dptr->dptr[i-1];
+				Dptr->dptr[i-1] = tmp;	
 			}
 	}
 }
@@ -239,18 +223,18 @@ void sortDomains(Init *init, int *index)
 /*
  * main Ncurses update
  */
-void NcursesUpdate(Init *init)
+void NcursesUpdate(Domains *Dptr)
 {
 	int i;
 
 	move(0,0);
 	addstr("Total Requests\tGET\t\tPOST\t\tDomain\n");
-	for (i = 0; i < init->Dptr->count; i++)
-	//for (i = init->Dptr->count - 1; i > -1; i--)
-		printw("%d\t\t%d\t\t%d\t\t%s\n", 	init->Dptr->dptr[i]->total_requests, 
-											init->Dptr->dptr[i]->GET, 
-											init->Dptr->dptr[i]->POST, 
-											init->Dptr->dptr[i]->name);
+	for (i = 0; i < Dptr->count; i++)
+	//for (i = Dptr->count - 1; i > -1; i--)
+		printw("%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
+											Dptr->dptr[i]->GET, 
+											Dptr->dptr[i]->POST, 
+											Dptr->dptr[i]->name);
 
 	refresh();
 
@@ -265,74 +249,73 @@ void NcursesUpdate(Init *init)
  * host: darkterminal.net
  * 
  */
-void Tally(Init *init, int *http, char *request, char *host)
+void Tally(Domains *Dptr, int *http, char *request, char *host)
 {
 	int index, request_index;
 	
-	if (!CheckifDomainExists(init, host))
-		AddDomain(init, host);	
+	if (!CheckifDomainExists(Dptr, host))
+		AddDomain(Dptr, host);	
 
-	index = GetDomainIndex(init, host);
+	index = GetDomainIndex(Dptr, host);
 
 	if (*http == 1) 		
-		init->Dptr->dptr[index]->GET++;
+		Dptr->dptr[index]->GET++;
 	else if (*http == 2)
-		init->Dptr->dptr[index]->POST++;
+		Dptr->dptr[index]->POST++;
 
-	request_index = CheckifRequestExists(init, &index, request);
+	request_index = CheckifRequestExists(Dptr, &index, request);
 
 	// if request not found set to -1 and set to num_requests when adding a new one
 	if (request_index == -1) {
-		request_index = init->Dptr->dptr[index]->num_requests;
+		request_index = Dptr->dptr[index]->num_requests;
 		
-		AddRequest(init, &index, &request_index, request);	
+		AddRequest(Dptr, &index, &request_index, request);	
 	}
 	else {
-		IncrementRequest(init, &index, &request_index, request);
+		IncrementRequest(Dptr, &index, &request_index, request);
 	}
 
 	// sort the domains
-	if (init->Dptr->count > 1 && index != 0)
-		sortDomains(init, &index);
+	if (Dptr->count > 1 && index != 0)
+		sortDomains(Dptr, &index);
 
 	// call main update ncurses function
-	NcursesUpdate(init);
+	NcursesUpdate(Dptr);
 	return;
 }
 	
-Init *Initialize()
+Domains *Initialize()
 {
-	Init *init = calloc(1, sizeof(Init));
+	Domains *Dptr = calloc(1, sizeof(Domains));
 	Domains *domains = calloc(1, sizeof(struct Domain));
-	init->Dptr = domains;
-	init->Dptr->count = 0;
+	Dptr = domains;
+	Dptr->count = 0;
 
-	return init;
+	return Dptr;
 }
 
-void TearDown(Init *init)
+void TearDown(Domains *Dptr)
 {
 	int i, j, domains = 0;
 
-	domains = init->Dptr->count;
+	domains = Dptr->count;
 	
 	for (i = 0; i < domains; i++)
-		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
-			free(init->Dptr->dptr[i]->requests[j]);
+		for (j = 0; j < Dptr->dptr[i]->num_requests; j++)
+			free(Dptr->dptr[i]->requests[j]);
 
 	for (i = 0; i < domains; i++)
-		free(init->Dptr->dptr[i]);
+		free(Dptr->dptr[i]);
 
 /*
-	free(init->Dptr->dptr[0]->requests[0]);
-	free(init->Dptr->dptr[1]->requests[0]);
+	free(Dptr->dptr[0]->requests[0]);
+	free(Dptr->dptr[1]->requests[0]);
 	
-	free(init->Dptr->dptr[0]);
-	free(init->Dptr->dptr[1]);
+	free(Dptr->dptr[0]);
+	free(Dptr->dptr[1]);
 */
 
-	free(init->Dptr);
-	free(init);
+	free(Dptr);
 	
 	return;
 }
@@ -396,7 +379,7 @@ char* ssl_version(u_short version) {
  *   
 */
 void
-got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
+got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet)
 {
 
     static int count = 1;                   /* packet counter */
@@ -551,7 +534,7 @@ got_packet(Init *init, const struct pcap_pkthdr *header, const u_char *packet)
 		strncpy(host_clean, host+6, num_host-6);
 
 		// send results in
-		Tally(init, &http, request_clean, host_clean);
+		Tally(Dptr, &http, request_clean, host_clean);
 	}
 
 return;
@@ -578,7 +561,7 @@ int promiscuous(pcap_t *handle, char *dev, char *errbuf) {
 	return 0;
 }
 
-int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
+int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 
 	struct bpf_program fp;		/* The compiled filter expression */
 	char filter_exp[] = "port 80";	/* The filter expression */
@@ -594,7 +577,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
             addstr("Catching SIGINT\nShutting Down\n");
 			refresh();
 			sleep(1);
-            TearDown(init);
+            TearDown(Dptr);
 			endwin();
             exit(1);
         }
@@ -632,7 +615,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Init *init) {
 
 
 	/* now we can set our callback function */
-	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)init);
+	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)Dptr);
 
 	/* cleanup */
 	pcap_freecode(&fp);
@@ -650,7 +633,7 @@ int main(int argc, char *argv[])  {
 	int i, j, k;
 	pcap_t *handle = NULL;
 
-	Init *init;
+	Domains *Dptr;
 
 	char *dev, errbuf[PCAP_ERRBUF_SIZE];
 	
@@ -665,25 +648,25 @@ int main(int argc, char *argv[])  {
 	fprintf(stderr, "Device: %s\n", dev);
 
 	// Initialize data structures
-	init = Initialize();
+	Dptr = Initialize();
 
 	//promiscuous(handle, dev, errbuf);
-	capture(handle, dev, errbuf, init);
+	capture(handle, dev, errbuf, Dptr);
 
 /*
 	// display results
-	for (i = 0; i < init->Dptr->count; i++) {
-		printf("Host: %s\t\tGET: %d\tPOST: %d\n", init->Dptr->dptr[i]->name, init->Dptr->dptr[i]->GET, init->Dptr->dptr[i]->POST);
-		for (j = 0; j < init->Dptr->dptr[i]->num_requests; j++)
-			//printf("%s\tcount: %d\n", init->Dptr->dptr[i]->requests[j]->url, init->Dptr->dptr[i]->requests[j]->count);
-			printf("count: %d\t%s\n", init->Dptr->dptr[i]->requests[j]->count, init->Dptr->dptr[i]->requests[j]->url);
+	for (i = 0; i < Dptr->count; i++) {
+		printf("Host: %s\t\tGET: %d\tPOST: %d\n", Dptr->dptr[i]->name, Dptr->dptr[i]->GET, Dptr->dptr[i]->POST);
+		for (j = 0; j < Dptr->dptr[i]->num_requests; j++)
+			//printf("%s\tcount: %d\n", Dptr->dptr[i]->requests[j]->url, Dptr->dptr[i]->requests[j]->count);
+			printf("count: %d\t%s\n", Dptr->dptr[i]->requests[j]->count, Dptr->dptr[i]->requests[j]->url);
 	}
 	printf("\n");
-	printf("number of domains: %d\n", init->Dptr->count);
+	printf("number of domains: %d\n", ->Dptr->count);
 */
 
 	// free up data structures
-	TearDown(init);
+	TearDown(Dptr);
 
 	// Cleanup Ncurses
 	endwin();

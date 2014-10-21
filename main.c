@@ -27,6 +27,9 @@
 /* Maximum number of Requests per Domain */
 #define REQUESTS 1024
 
+/* Maximum number of IPs per Domain */
+#define IPS 1024
+
 /* Ethernet header */
 struct sniff_ethernet {
         u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
@@ -80,7 +83,7 @@ struct sniff_tcp {
 
 /*
  * main struct that is at the top of all the data structures
-*/
+ */
 struct Domains {
 	u_int count;
 	struct Domain *dptr[DOMAINS];
@@ -90,20 +93,22 @@ typedef struct Domains Domains;
 
 /*
  * struct to store data on domain
-*/
+ */
 struct Domain {
 		u_int GET, POST;
 		u_int num_requests;
 		u_int total_requests;
+		u_int num_ips;
 		char name[32];
 		struct Request *requests[REQUESTS];
+		struct IP *ips[IPS];
 };
 
 typedef struct Domain Domain;
 
 /*
  * struct to store requests about a domain
-*/
+ */
 struct Request {
 		u_int count;	
 		char url[32];
@@ -112,8 +117,18 @@ struct Request {
 typedef struct Request Request;
 
 /*
+ * struct to store IPs
+ */
+struct IP {
+	u_int count;
+	char ip[16];
+};
+
+typedef struct IP IP;
+
+/*
  * allocates and creates a domain struct
-*/
+ */
 void AddDomain(Domains *Dptr, char *host)
 {
 	int count;
@@ -134,7 +149,7 @@ void AddDomain(Domains *Dptr, char *host)
 
 /*
  * add new request
-*/
+ */
 void AddRequest(Domains *Dptr, int *index, int *request_index, char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
@@ -151,7 +166,7 @@ void AddRequest(Domains *Dptr, int *index, int *request_index, char *req)
 
 /*
  * increment an existing request
-*/
+ */
 void IncrementRequest(Domains *Dptr, int *index, int *request_index, const char *req)
 {
 	Dptr->dptr[*index]->total_requests++;
@@ -161,8 +176,47 @@ void IncrementRequest(Domains *Dptr, int *index, int *request_index, const char 
 }
 
 /*
+ * add new ip
+ */
+void AddIP(Domains *Dptr, int *index, int *ip_index, char *ip)
+{
+	IP *ipaddress= calloc(1, sizeof(struct IP));
+
+	Dptr->dptr[*index]->ips[*ip_index] = ipaddress;
+	Dptr->dptr[*index]->ips[*ip_index]->count = 0;
+	Dptr->dptr[*index]->ips[*ip_index]->count++;
+	strncpy(Dptr->dptr[*index]->ips[*ip_index]->ip, ip, 16);
+	
+	return;
+}
+
+/*
+ * increment an existing ip
+ */
+void IncrementIP(Domains *Dptr, int *index, int *ip_index, const char *ip)
+{
+	Dptr->dptr[*index]->ips[*ip_index]->count++;
+	
+	return;
+}
+
+/*
+ * checks if ip exists
+ */
+int CheckifIPExists(Domains *Dptr, int *index, char *ip)
+{
+	int i;
+
+	for (i = 0; i < Dptr->dptr[*index]->num_ips; i++) {
+		if (strncmp(Dptr->dptr[*index]->ips[i]->ip, ip, strlen(ip)) == 0)
+			return i;
+	}
+	return -1;
+}
+
+/*
  * checks of domain exists
-*/
+ */
 int CheckifDomainExists(Domains *Dptr, char *host)
 {
 	int i;
@@ -176,7 +230,7 @@ int CheckifDomainExists(Domains *Dptr, char *host)
 
 /*
  * checks if request exists
-*/
+ */
 int CheckifRequestExists(Domains *Dptr, int *index, const char *request)
 {
 	int i;
@@ -191,7 +245,7 @@ int CheckifRequestExists(Domains *Dptr, int *index, const char *request)
 
 /*
  * gets index of domain 
-*/
+ */
 int GetDomainIndex(Domains *Dptr, char *host)
 {
 	int i;
@@ -249,9 +303,9 @@ void NcursesUpdate(Domains *Dptr)
  * host: darkterminal.net
  * 
  */
-void Tally(Domains *Dptr, int *http, char *request, char *host)
+void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 {
-	int index, request_index;
+	int index, request_index, ip_index;
 	
 	if (!CheckifDomainExists(Dptr, host))
 		AddDomain(Dptr, host);	
@@ -275,6 +329,18 @@ void Tally(Domains *Dptr, int *http, char *request, char *host)
 		IncrementRequest(Dptr, &index, &request_index, request);
 	}
 
+	ip_index = CheckifIPExists(Dptr, &index, ip);
+
+	// if ip not found set to -1 and set to num_ips when adding a new one
+	if (ip_index == -1) {
+		ip_index = Dptr->dptr[index]->num_ips;
+
+		AddIP(Dptr, &index, &ip_index, ip);
+	}
+	else {
+		IncrementIP(Dptr, &index, &ip_index, ip);
+	}
+
 	// sort the domains
 	if (Dptr->count > 1 && index != 0)
 		sortDomains(Dptr, &index);
@@ -284,6 +350,9 @@ void Tally(Domains *Dptr, int *http, char *request, char *host)
 	return;
 }
 	
+/*
+ * Initializes main pointer to data structures
+ */
 Domains *Initialize()
 {
 	Domains *Dptr = calloc(1, sizeof(Domains));
@@ -294,15 +363,22 @@ Domains *Initialize()
 	return Dptr;
 }
 
+/*
+ * Frees up all the data structures
+ */
 void TearDown(Domains *Dptr)
 {
-	int i, j, domains = 0;
+	int i, j, ips = 0, domains = 0;
 
 	domains = Dptr->count;
 	
 	for (i = 0; i < domains; i++)
 		for (j = 0; j < Dptr->dptr[i]->num_requests; j++)
 			free(Dptr->dptr[i]->requests[j]);
+
+	for (i = 0; i < domains; i++)
+		for (j = 0; j < Dptr->dptr[i]->num_ips; j++)
+			free(Dptr->dptr[i]->ips[j]);
 
 	for (i = 0; i < domains; i++)
 		free(Dptr->dptr[i]);
@@ -324,7 +400,7 @@ void TearDown(Domains *Dptr)
  * checks beginning of payload to see if it contains 'GET' or 'POST'
  * if it does then it returns 1 else it returns 0
  *
-*/
+ */
 int isGETPOST(const u_char *payload)
 {
 /*
@@ -375,11 +451,10 @@ char* ssl_version(u_short version) {
 */ // end of ssl definitions
 
 /*
- *  * dissect/print packet
+ * dissect/print packet
  *   
-*/
-void
-got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet)
+ */
+void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet)
 {
 
     static int count = 1;                   /* packet counter */
@@ -418,7 +493,7 @@ got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet
 /*
  *      *  OK, this packet is TCP.
  *           
-*/
+ */
     /* define/compute tcp header offset */
     tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
     size_tcp = TH_OFF(tcp)*4;
@@ -513,7 +588,7 @@ got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet
  *      * Print payload data; it might be binary, so don't just
  *           * treat it as a string.
  *                
-*/
+ */
     if ((size_payload > 0) && (http = isGETPOST(payload))) {
 
 		memset(host_clean, '\0', 32);
@@ -532,9 +607,8 @@ got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet
 		num_host = strcspn(host, "\r");
 		//memset(host_clean, '\0', 32);
 		strncpy(host_clean, host+6, num_host-6);
-
 		// send results in
-		Tally(Dptr, &http, request_clean, host_clean);
+		Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
 	}
 
 return;

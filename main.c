@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <ncurses.h>
 #include <signal.h>
+#include <pthread.h>
 
 /* default snap length (maximum bytes per packet to capture) */
 #define SNAP_LEN 1518
@@ -30,8 +31,14 @@
 /* Maximum number of IPs per Domain */
 #define IPS 1024
 
+/* Defining ENTER key for integer 10 */
+#define ENTER 10
+
 /* Defining Ncurses Pads */
 WINDOW *part1, *part2;
+
+/* Defining pthread variables */
+pthread_t user_input;
 
 /* Defining Ncurses rows and columns */
 int rows, columns;
@@ -93,6 +100,8 @@ struct sniff_tcp {
 struct Domains {
 	u_int count;
 	struct Domain *dptr[DOMAINS];
+	struct bpf_program *fp;
+	pcap_t *handle;
 };
 
 typedef struct Domains Domains;
@@ -690,6 +699,10 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 		return(2);
 	}
 
+	// attach struct bpf_program fp and pcap_t *handle to Dptr inorder to call pcap_freecode from outside this function
+	Dptr->fp = &fp;
+	Dptr->handle = handle;
+
 	/* now we can set our callback function */
 	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)Dptr);
 	
@@ -707,6 +720,9 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 	return(0);
 }
 
+/*
+ * function to start up Ncurses
+ */
 int NcursesInit() {
 	
 	// Start up Ncurses and clear screen
@@ -727,12 +743,63 @@ int NcursesInit() {
 	refresh();
 }
 
+/*
+ * function to shut down Ncurses
+ */
 int NcursesExit() {
 
 	// Cleanup Ncurses
 	delwin(part1);
 	delwin(part2);
 	endwin();
+}
+
+/* 
+ * function to have thread run for user input
+ */
+void UserInput(Domains *Dptr) {
+
+	int selection = 0, input = 0;
+
+	do {
+		input = getchar();
+
+		switch(input) {
+			case 'j': // move down
+				selection++;
+				break;
+			case 'k': // move up
+				selection--;
+				break;
+			case ENTER: // switch to part 2 for domain
+				break;
+			case 'i': // switch to part 1
+				break;
+			default:
+				break;
+		}
+	} while (input != 'q');
+		CleanExit(Dptr);
+}
+
+/*
+ * function to free up all resources properly
+ */
+CleanExit(Domains *Dptr) {
+		werase(part1);
+		prefresh(part1, 0, 0, 0, 0, rows, columns);
+		move(0, 0);
+        addstr("Shutting Down\n");
+		refresh();
+		sleep(1);
+    
+		NcursesExit();
+		TearDown(Dptr);
+		pcap_freecode(Dptr->fp);
+		if (Dptr->handle != NULL)
+			pcap_close(Dptr->handle);
+		//pthread_exit;
+		exit(0);
 }
 
 int main(int argc, char *argv[])  {
@@ -756,6 +823,10 @@ int main(int argc, char *argv[])  {
 
 	// Initialize data structures
 	Dptr = Initialize();
+
+	// start up user input thread
+	//pthread_create (&UserInput, NULL, (void *) &UserInput, (void *) &data1);
+	pthread_create (&user_input, NULL, (void *) &UserInput, (void *) Dptr);
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, Dptr);

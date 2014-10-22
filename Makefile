@@ -1,4 +1,4 @@
-CFLAGS=-g3 -lpcap -lncurses
+CFLAGS=-g3 -lpcap -lncurses -lpthread
 
 all: main
 

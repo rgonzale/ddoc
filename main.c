@@ -30,6 +30,12 @@
 /* Maximum number of IPs per Domain */
 #define IPS 1024
 
+/* Defining Ncurses Pads */
+WINDOW *part1, *part2;
+
+/* Defining Ncurses rows and columns */
+int rows, columns;
+
 /* Ethernet header */
 struct sniff_ethernet {
         u_char  ether_dhost[ETHER_ADDR_LEN];    /* destination host address */
@@ -281,16 +287,17 @@ void NcursesUpdate(Domains *Dptr)
 {
 	int i;
 
-	move(0,0);
-	addstr("Total Requests\tGET\t\tPOST\t\tDomain\n");
+	// move to the top left corner and output Domain Summary Statistics (Part 1)
+	wmove(part1, 0, 0);
+	waddstr(part1, "Total Requests\tGET\t\tPOST\t\tDomain\n");
 	for (i = 0; i < Dptr->count; i++)
 	//for (i = Dptr->count - 1; i > -1; i--)
-		printw("%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
-											Dptr->dptr[i]->GET, 
-											Dptr->dptr[i]->POST, 
-											Dptr->dptr[i]->name);
+		wprintw(part1, "%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
+													Dptr->dptr[i]->GET, 
+													Dptr->dptr[i]->POST, 
+													Dptr->dptr[i]->name);
 
-	refresh();
+	prefresh(part1, 0, 0, 0, 0, rows, columns);
 
 }
 
@@ -648,17 +655,21 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 	// catch Cntrl-C
 	void mysighand(int signum) {
         if (signum == 2) {
+			move(0, 0);
             addstr("Catching SIGINT\nShutting Down\n");
 			refresh();
 			sleep(1);
             TearDown(Dptr);
-			endwin();
+			NcursesExit();
             exit(1);
         }
 	}
 
 	// set control-c handler
 	signal(SIGINT, mysighand);
+
+	// fire up Ncurses
+	NcursesInit();
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -679,27 +690,49 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 		return(2);
 	}
 
-
-	// Start up Ncurses and clear screen
-	initscr();
-
-	move(0,0);
-	waddstr(stdscr, "Capture starting\n");
-	refresh();
-
-
 	/* now we can set our callback function */
 	pcap_loop(handle, num_packets, (pcap_handler)got_packet, (u_char *)Dptr);
-
+	
 	/* cleanup */
 	pcap_freecode(&fp);
 
 	if (handle != NULL)
 		pcap_close(handle);
 
+	// shut down Ncurses
+	NcursesExit();
+
 	printf("\nCapture complete.\n");
 
 	return(0);
+}
+
+int NcursesInit() {
+	
+	// Start up Ncurses and clear screen
+	initscr();
+	
+	// get number of rows and columns for current session
+	getmaxyx(stdscr, rows, columns);
+
+	/* initialize pads
+	 * part1 = Full summary of domains and their requests
+	 * part2 = domain specific stats with IPs and URLs
+	 */	
+	part1 = newpad(rows, columns);
+	part2 = newpad(rows, columns);
+
+	move(0,0);
+	addstr("Capture starting\n");
+	refresh();
+}
+
+int NcursesExit() {
+
+	// Cleanup Ncurses
+	delwin(part1);
+	delwin(part2);
+	endwin();
 }
 
 int main(int argc, char *argv[])  {
@@ -741,9 +774,6 @@ int main(int argc, char *argv[])  {
 
 	// free up data structures
 	TearDown(Dptr);
-
-	// Cleanup Ncurses
-	endwin();
 
 	return(0);
 }

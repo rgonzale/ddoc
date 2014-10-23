@@ -26,16 +26,20 @@
 #define DOMAINS 1024
 
 /* Maximum number of Requests per Domain */
-#define REQUESTS 1024
+#define REQUESTS 65536 
 
 /* Maximum number of IPs per Domain */
 #define IPS 1024
 
-/* Defining ENTER key for integer 10 */
+/* Definition for the ENTER key representing integer 10 */
 #define ENTER 10
 
+/* Definintion for refreshing the pad */
+#define PREFRESH1 prefresh(part1, 0, 0, 0, 3, rows, columns);
+#define PREFRESH2 prefresh(part1_index, 0, 0, 1, 1, rows, 2);
+
 /* Defining Ncurses Pads */
-WINDOW *part1, *part2;
+WINDOW *part1, *part1_index;
 
 /* Defining pthread variables */
 pthread_t user_input;
@@ -298,15 +302,15 @@ void NcursesUpdate(Domains *Dptr)
 
 	// move to the top left corner and output Domain Summary Statistics (Part 1)
 	wmove(part1, 0, 0);
-	waddstr(part1, "Total Requests\tGET\t\tPOST\t\tDomain\n");
+	waddstr(part1, "Total Requests\tGET\tPOST\tDomain\n");
 	for (i = 0; i < Dptr->count; i++)
 	//for (i = Dptr->count - 1; i > -1; i--)
-		wprintw(part1, "%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
-													Dptr->dptr[i]->GET, 
-													Dptr->dptr[i]->POST, 
-													Dptr->dptr[i]->name);
+		wprintw(part1, "%d\t\t%d\t%d\t%s\n", 	Dptr->dptr[i]->total_requests, 
+												Dptr->dptr[i]->GET, 
+												Dptr->dptr[i]->POST, 
+												Dptr->dptr[i]->name);
 
-	prefresh(part1, 0, 0, 0, 0, rows, columns);
+	PREFRESH1;
 
 }
 
@@ -665,6 +669,8 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 	void mysighand(int signum) {
         if (signum == 2) {
 			move(0, 0);
+			clear();
+			refresh();
             addstr("Catching SIGINT\nShutting Down\n");
 			refresh();
 			sleep(1);
@@ -727,7 +733,15 @@ int NcursesInit() {
 	
 	// Start up Ncurses and clear screen
 	initscr();
-	
+
+	// enable colors
+	if (has_colors() == TRUE)
+		start_color();
+
+	// create black and white pair
+	init_pair(1, COLOR_BLACK, COLOR_WHITE);
+	init_pair(2, COLOR_WHITE, COLOR_BLACK);
+
 	// get number of rows and columns for current session
 	getmaxyx(stdscr, rows, columns);
 
@@ -735,12 +749,41 @@ int NcursesInit() {
 	 * part1 = Full summary of domains and their requests
 	 * part2 = domain specific stats with IPs and URLs
 	 */	
-	part1 = newpad(rows, columns);
-	part2 = newpad(rows, columns);
+	part1 = newpad(rows, columns-3); // hold Summary of Domains
+	part1_index = newpad(rows-1, 2); // hold indexes
 
 	move(0,0);
+	printw("rows = %d\ncolumns = %d\n", rows, columns);
 	addstr("Capture starting\n");
 	refresh();
+	sleep(1);
+
+	clear();
+	refresh();
+
+}
+
+/*
+ * function to free up all resources properly
+ */
+CleanExit(Domains *Dptr) {
+		werase(part1);
+		PREFRESH1;
+		move(0, 0);
+        addstr("Shutting Down\n");
+		refresh();
+		sleep(1);
+    
+		NcursesExit();
+		TearDown(Dptr);
+
+		pcap_freecode(Dptr->fp);
+
+		if (Dptr->handle != NULL)
+			pcap_close(Dptr->handle);
+
+		// pthread exiting program
+		exit(0);
 }
 
 /*
@@ -750,7 +793,7 @@ int NcursesExit() {
 
 	// Cleanup Ncurses
 	delwin(part1);
-	delwin(part2);
+	delwin(part1_index);
 	endwin();
 }
 
@@ -761,15 +804,37 @@ void UserInput(Domains *Dptr) {
 
 	int selection = 0, input = 0;
 
+	while (Dptr->count < 1)
+		sleep(1);
+
+	// turn off cursor
+	curs_set(0);
+
+	waddstr(part1_index, "->");
+
+	PREFRESH2;
+	
 	do {
 		input = getchar();
 
 		switch(input) {
 			case 'j': // move down
+				wmove(part1_index, selection, 0);
+				werase(part1_index);
 				selection++;
+				wmove(part1_index, selection, 0);
+				waddstr(part1_index, "->");
+				PREFRESH2;
 				break;
 			case 'k': // move up
+				wmove(part1_index, selection, 0);
+				werase(part1_index);
 				selection--;
+				wmove(part1_index, selection, 0);
+				waddstr(part1_index, "->");
+				//pechochar(part1_index, '-');
+				touchwin(part1_index);
+				PREFRESH2;
 				break;
 			case ENTER: // switch to part 2 for domain
 				break;
@@ -779,27 +844,9 @@ void UserInput(Domains *Dptr) {
 				break;
 		}
 	} while (input != 'q');
+		werase(part1_index);
+		PREFRESH2;
 		CleanExit(Dptr);
-}
-
-/*
- * function to free up all resources properly
- */
-CleanExit(Domains *Dptr) {
-		werase(part1);
-		prefresh(part1, 0, 0, 0, 0, rows, columns);
-		move(0, 0);
-        addstr("Shutting Down\n");
-		refresh();
-		sleep(1);
-    
-		NcursesExit();
-		TearDown(Dptr);
-		pcap_freecode(Dptr->fp);
-		if (Dptr->handle != NULL)
-			pcap_close(Dptr->handle);
-		//pthread_exit;
-		exit(0);
 }
 
 int main(int argc, char *argv[])  {
@@ -825,23 +872,10 @@ int main(int argc, char *argv[])  {
 	Dptr = Initialize();
 
 	// start up user input thread
-	//pthread_create (&UserInput, NULL, (void *) &UserInput, (void *) &data1);
 	pthread_create (&user_input, NULL, (void *) &UserInput, (void *) Dptr);
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, Dptr);
-
-/*
-	// display results
-	for (i = 0; i < Dptr->count; i++) {
-		printf("Host: %s\t\tGET: %d\tPOST: %d\n", Dptr->dptr[i]->name, Dptr->dptr[i]->GET, Dptr->dptr[i]->POST);
-		for (j = 0; j < Dptr->dptr[i]->num_requests; j++)
-			//printf("%s\tcount: %d\n", Dptr->dptr[i]->requests[j]->url, Dptr->dptr[i]->requests[j]->count);
-			printf("count: %d\t%s\n", Dptr->dptr[i]->requests[j]->count, Dptr->dptr[i]->requests[j]->url);
-	}
-	printf("\n");
-	printf("number of domains: %d\n", ->Dptr->count);
-*/
 
 	// free up data structures
 	TearDown(Dptr);

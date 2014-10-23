@@ -41,9 +41,6 @@
 /* Defining Ncurses Pads */
 WINDOW *part1, *part1_index;
 
-/* Defining pthread variables */
-pthread_t user_input;
-
 /* Defining Ncurses rows and columns */
 int rows, columns;
 
@@ -403,14 +400,6 @@ void TearDown(Domains *Dptr)
 	for (i = 0; i < domains; i++)
 		free(Dptr->dptr[i]);
 
-/*
-	free(Dptr->dptr[0]->requests[0]);
-	free(Dptr->dptr[1]->requests[0]);
-	
-	free(Dptr->dptr[0]);
-	free(Dptr->dptr[1]);
-*/
-
 	free(Dptr);
 	
 	return;
@@ -442,33 +431,6 @@ int isGETPOST(const u_char *payload)
 		return 0;
 
 }
-
-/* ssl defintiions
-#define SSL_MIN_GOOD_VERSION 0x002
-#define SSL_MAX_GOOD_VERSION 0x304 // let's be optimistic here!
-#define TLS_HANDSHAKE 22
-#define TLS_CLIENT_HELLO 1
-#define TLS_SERVER_HELLO 2
-#define OFFSET_HELLO_VERSION 9
-#define OFFSET_SESSION_LENGTH 43
-#define OFFSET_CIPHER_LIST 44
-
-char* ssl_version(u_short version) {
-
-	static char hex[7];
-
-	switch (version) {
-		case 0x002: return "SSLv2";
-		case 0x300: return "SSLv3";
-		case 0x301: return "TLSv1";
-		case 0x302: return "TLSv1.1";
-		case 0x303: return "TLSv1.2";
-	}
-	snprintf(hex, sizeof(hex), "0x%04hx", version);
-
-	return hex;
-}
-*/ // end of ssl definitions
 
 /*
  * dissect/print packet
@@ -543,66 +505,6 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 
     /* compute tcp payload (segment) size */
     size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
-
-	/* START OF SSL
-	if (payload[0] != TLS_HANDSHAKE) {
-		printf("Not a TLS handshake: 0x%02hhx\n", payload[0]);
-		return;
-	}
-
-	if (size_payload < OFFSET_CIPHER_LIST + 3) { // at least one cipher + compression
-		printf("TLS handshake header too short: %u bytes\n", size_tcp);
-		return;
-	}
-
-	u_short proto_version = payload[1]*256 + payload[2];
-	printf("%s ", ssl_version(proto_version));
-	u_short hello_version = payload[OFFSET_HELLO_VERSION]*256 + payload[OFFSET_HELLO_VERSION+1];
-
-	if (proto_version < SSL_MIN_GOOD_VERSION || proto_version >= SSL_MAX_GOOD_VERSION ||
-		hello_version < SSL_MIN_GOOD_VERSION || hello_version >= SSL_MAX_GOOD_VERSION) {
-		printf("%s bad version(s)\n", ssl_version(hello_version));
-		return;
-	}
-
-	// skip session ID
-	const u_char *cipher_data = &payload[OFFSET_SESSION_LENGTH];
-	#ifdef LOG_SESSIONID
-	if (cipher_data[0] != 0) {
-		printf("SID[%hhu] ", cipher_data[0]);
-	}
-	#endif
-
-	if (size_payload < OFFSET_SESSION_LENGTH + cipher_data[0] + 3) {
-	printf("SessionID too long: %hhu bytes\n", cipher_data[0]);
-	return;
-	}
-
-	cipher_data += 1 + cipher_data[0];
-
-	switch (payload[5]) {
-	case TLS_CLIENT_HELLO:
-		printf("ClientHello %s ", ssl_version(hello_version));
-		u_short cs_len = cipher_data[0]*256 + cipher_data[1];
-		cipher_data += 2; // skip cipher suites length
-		// FIXME: check for buffer overruns
-		int cs_id;
-		for (cs_id = 0; cs_id < cs_len/2; cs_id++)
-			printf(":%02hhX%02hhX", cipher_data[2*cs_id], cipher_data[2*cs_id + 1]);
-			printf(":\n");
-			break;
-
-	case TLS_SERVER_HELLO:
-		printf("ServerHello %s ", ssl_version(hello_version));
-		printf("cipher %02hhX%02hhX\n", cipher_data[0], cipher_data[1]);
-		printf("%s\n", payload);
-		break;
-
-	default:
-		printf("Not a Hello\n");
-		return;
-	}
-	*/  //END OF SSL
 
 /*
  *      * Print payload data; it might be binary, so don't just
@@ -705,7 +607,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 		return(2);
 	}
 
-	// attach struct bpf_program fp and pcap_t *handle to Dptr inorder to call pcap_freecode from outside this function
+	// set handle and fp to Dptr so that CleanExit() can free them
 	Dptr->fp = &fp;
 	Dptr->handle = handle;
 
@@ -767,23 +669,28 @@ int NcursesInit() {
  * function to free up all resources properly
  */
 CleanExit(Domains *Dptr) {
-		werase(part1);
-		PREFRESH1;
-		move(0, 0);
-        addstr("Shutting Down\n");
-		refresh();
-		sleep(1);
+
+	struct bpf_program *fp2;
+	fp2 = Dptr->fp;
+	
+	werase(part1);
+	PREFRESH1;
+	move(0, 0);
+    addstr("Shutting Down\n");
+	refresh();
+	sleep(1);
     
-		NcursesExit();
-		TearDown(Dptr);
+	NcursesExit();
 
-		pcap_freecode(Dptr->fp);
+	pcap_freecode(Dptr->fp);
 
-		if (Dptr->handle != NULL)
-			pcap_close(Dptr->handle);
+	if (Dptr->handle != NULL)
+		pcap_close(Dptr->handle);
 
-		// pthread exiting program
-		exit(0);
+	TearDown(Dptr);
+
+	// pthread exiting program
+	exit(0);
 }
 
 /*
@@ -852,7 +759,10 @@ void UserInput(Domains *Dptr) {
 int main(int argc, char *argv[])  {
 
 	int i, j, k;
+
 	pcap_t *handle = NULL;
+
+	pthread_t user_input;
 
 	Domains *Dptr;
 

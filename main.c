@@ -34,15 +34,22 @@
 /* Definition for the ENTER key representing integer 10 */
 #define ENTER 10
 
-/* Definintion for refreshing the pad */
-#define PREFRESH1 prefresh(part1, 0, 0, 0, 3, rows, columns);
-#define PREFRESH2 prefresh(part1_index, 0, 0, 1, 1, rows, 2);
+/* Definintion for refreshing the pads */
+#define PREFRESHP1 prefresh(p1, 0, 0, 0, 3, rows, columns);
+#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 1, rows, 2);
+#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 0, 0, rows, 19);
+#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 0, 25, rows, columns);
 
 /* Defining Ncurses Pads */
-WINDOW *part1, *part1_index;
+WINDOW *p1, *p1index, *p2ips, *p2requests;
 
 /* Defining Ncurses rows and columns */
 int rows, columns;
+
+/* Domain string and boolean int for switching between part1 and part2 */
+//char *part2domain;
+struct Domain *part2domain;
+int usePart2;
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -166,16 +173,16 @@ void AddDomain(Domains *Dptr, char *host)
 /*
  * add new request
  */
-void AddRequest(Domains *Dptr, int *index, int *request_index, char *req)
+void AddRequest(Domains *Dptr, int *domain_index, int *request_index, char *req)
 {
 	Request *request = calloc(1, sizeof(struct Request));
 
-	Dptr->dptr[*index]->requests[*request_index] = request;
-	Dptr->dptr[*index]->num_requests++;
-	Dptr->dptr[*index]->total_requests++;
-	Dptr->dptr[*index]->requests[*request_index]->count = 0;
-	Dptr->dptr[*index]->requests[*request_index]->count++;
-	strncpy(Dptr->dptr[*index]->requests[*request_index]->url, req, 32);
+	Dptr->dptr[*domain_index]->requests[*request_index] = request;
+	Dptr->dptr[*domain_index]->num_requests++;
+	Dptr->dptr[*domain_index]->total_requests++;
+	Dptr->dptr[*domain_index]->requests[*request_index]->count = 0;
+	Dptr->dptr[*domain_index]->requests[*request_index]->count++;
+	strncpy(Dptr->dptr[*domain_index]->requests[*request_index]->url, req, 32);
 	
 	return;
 }
@@ -183,10 +190,10 @@ void AddRequest(Domains *Dptr, int *index, int *request_index, char *req)
 /*
  * increment an existing request
  */
-void IncrementRequest(Domains *Dptr, int *index, int *request_index, const char *req)
+void IncrementRequest(Domains *Dptr, int *domain_index, int *request_index, const char *req)
 {
-	Dptr->dptr[*index]->total_requests++;
-	Dptr->dptr[*index]->requests[*request_index]->count++;
+	Dptr->dptr[*domain_index]->total_requests++;
+	Dptr->dptr[*domain_index]->requests[*request_index]->count++;
 	
 	return;
 }
@@ -194,14 +201,15 @@ void IncrementRequest(Domains *Dptr, int *index, int *request_index, const char 
 /*
  * add new ip
  */
-void AddIP(Domains *Dptr, int *index, int *ip_index, char *ip)
+void AddIP(Domains *Dptr, int *domain_index, int *ip_index, char *ip)
 {
 	IP *ipaddress= calloc(1, sizeof(struct IP));
 
-	Dptr->dptr[*index]->ips[*ip_index] = ipaddress;
-	Dptr->dptr[*index]->ips[*ip_index]->count = 0;
-	Dptr->dptr[*index]->ips[*ip_index]->count++;
-	strncpy(Dptr->dptr[*index]->ips[*ip_index]->ip, ip, 16);
+	Dptr->dptr[*domain_index]->ips[*ip_index] = ipaddress;
+	Dptr->dptr[*domain_index]->ips[*ip_index]->count = 0;
+	Dptr->dptr[*domain_index]->ips[*ip_index]->count++;
+	strncpy(Dptr->dptr[*domain_index]->ips[*ip_index]->ip, ip, 16);
+	Dptr->dptr[*domain_index]->num_ips++;
 	
 	return;
 }
@@ -209,9 +217,9 @@ void AddIP(Domains *Dptr, int *index, int *ip_index, char *ip)
 /*
  * increment an existing ip
  */
-void IncrementIP(Domains *Dptr, int *index, int *ip_index, const char *ip)
+void IncrementIP(Domains *Dptr, int *domain_index, int *ip_index, const char *ip)
 {
-	Dptr->dptr[*index]->ips[*ip_index]->count++;
+	Dptr->dptr[*domain_index]->ips[*ip_index]->count++;
 	
 	return;
 }
@@ -219,12 +227,12 @@ void IncrementIP(Domains *Dptr, int *index, int *ip_index, const char *ip)
 /*
  * checks if ip exists
  */
-int CheckifIPExists(Domains *Dptr, int *index, char *ip)
+int CheckifIPExists(Domains *Dptr, int *domain_index, char *ip)
 {
 	int i;
 
-	for (i = 0; i < Dptr->dptr[*index]->num_ips; i++) {
-		if (strncmp(Dptr->dptr[*index]->ips[i]->ip, ip, strlen(ip)) == 0)
+	for (i = 0; i < Dptr->dptr[*domain_index]->num_ips; i++) {
+		if (strncmp(Dptr->dptr[*domain_index]->ips[i]->ip, ip, strlen(ip)) == 0)
 			return i;
 	}
 	return -1;
@@ -247,12 +255,12 @@ int CheckifDomainExists(Domains *Dptr, char *host)
 /*
  * checks if request exists
  */
-int CheckifRequestExists(Domains *Dptr, int *index, const char *request)
+int CheckifRequestExists(Domains *Dptr, int *domain_index, const char *request)
 {
 	int i;
 
-	for (i = 0; i < Dptr->dptr[*index]->num_requests; i++) {
-		if (strncmp(Dptr->dptr[*index]->requests[i]->url, request, strlen(request)) == 0)
+	for (i = 0; i < Dptr->dptr[*domain_index]->num_requests; i++) {
+		if (strncmp(Dptr->dptr[*domain_index]->requests[i]->url, request, strlen(request)) == 0)
 			return i;
 	}
 	return -1;
@@ -275,13 +283,13 @@ int GetDomainIndex(Domains *Dptr, char *host)
 }
 
 /*
- * sorting function
+ * sort Domain function
  */
-void sortDomains(Domains *Dptr, int *index)
+void sortDomains(Domains *Dptr, int *domain_index)
 {
 	int i;
 	struct Domain *tmp;
-		for (i = *index; i > 0; i--) {
+		for (i = *domain_index; i > 0; i--) {
 			if (Dptr->dptr[i]->total_requests > Dptr->dptr[i-1]->total_requests) {
 				tmp = Dptr->dptr[i];
 				Dptr->dptr[i] = Dptr->dptr[i-1];
@@ -291,27 +299,107 @@ void sortDomains(Domains *Dptr, int *index)
 }
 
 /*
- * main Ncurses update
+ * sort Request function
  */
-void NcursesUpdate(Domains *Dptr)
+void sortRequests(Domain *dptr, int *request_index)
+{
+	int i;
+	struct Request *tmp;
+		for (i = *request_index; i > 0; i--) {
+			if (dptr->requests[i]->count > dptr->requests[i-1]->count) {
+				tmp = dptr->requests[i];
+				dptr->requests[i] = dptr->requests[i-1];
+				dptr->requests[i-1] = tmp;	
+			}
+	}
+}
+
+/*
+ * sort IP function
+ */
+void sortIPs(Domain *dptr, int *ip_index)
+{
+	int i;
+	struct IP *tmp;
+		for (i = *ip_index; i > 0; i--) {
+			if (dptr->ips[i]->count > dptr->ips[i-1]->count) {
+				tmp = dptr->ips[i];
+				dptr->ips[i] = dptr->ips[i-1];
+				dptr->ips[i-1] = tmp;	
+			}
+	}
+}
+
+/*
+ * Ncurses Part1 - Summary of Domains
+ */
+void NcursesPart1(Domains *Dptr)
 {
 	int i;
 
+	// clear up screen
+	werase(p2requests);
+	PREFRESHP2REQUESTS;
+	werase(p2ips);
+	PREFRESHP2IPS;
+
+	PREFRESHP1INDEX;
+
 	// move to the top left corner and output Domain Summary Statistics (Part 1)
-	wmove(part1, 0, 0);
-	waddstr(part1, "Total Requests\tGET\tPOST\tDomain\n");
+	wmove(p1, 0, 0);
+	waddstr(p1, "Total Requests\tGET\tPOST\tDomain\n");
 	for (i = 0; i < Dptr->count; i++)
 	//for (i = Dptr->count - 1; i > -1; i--)
-		wprintw(part1, "%d\t\t%d\t%d\t%s\n", 	Dptr->dptr[i]->total_requests, 
+		wprintw(p1, "%d\t\t%d\t%d\t%s\n", 	Dptr->dptr[i]->total_requests, 
 												Dptr->dptr[i]->GET, 
 												Dptr->dptr[i]->POST, 
 												Dptr->dptr[i]->name);
 
-	PREFRESH1;
-
+	PREFRESHP1;
 }
 
-	
+/*
+ * Ncurses Part2 - Summary of Domain
+ */
+void NcursesPart2(Domain *dptr)
+{
+	int i;
+
+	// clear up screen
+	werase(p1);
+	werase(p1index);
+	PREFRESHP1;
+	PREFRESHP1INDEX;
+
+	// move to top left of p2ips pad
+	wmove(p2ips, 0, 0);
+	waddstr(p2ips, "IPs");
+	PREFRESHP2IPS;
+
+	// output IPs
+	wmove(p2ips, 2, 0);
+	for (i = 0; i < dptr->num_ips; i++)
+		wprintw(p2ips, "%s: %d\n",	dptr->ips[i]->ip,
+									dptr->ips[i]->count);	
+
+	PREFRESHP2IPS;
+
+	// move to the top left of p2requests pad 
+	wmove(p2requests, 0, 0);
+	wprintw(p2requests, "%s\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n\n", 
+											dptr->name,
+											dptr->GET,
+											dptr->POST,
+											dptr->total_requests);
+
+	// output URLs
+	for (i = 0; i < dptr->num_requests; i++)
+		wprintw(p2requests, "count: %d\t%s\n",	dptr->requests[i]->count,
+												dptr->requests[i]->url);	
+
+	PREFRESHP2REQUESTS;
+}	
+
 /*
  * executes accounting
  * 
@@ -322,48 +410,59 @@ void NcursesUpdate(Domains *Dptr)
  */
 void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 {
-	int index, request_index, ip_index;
+	int domain_index, request_index, ip_index;
 	
 	if (!CheckifDomainExists(Dptr, host))
 		AddDomain(Dptr, host);	
 
-	index = GetDomainIndex(Dptr, host);
+	domain_index = GetDomainIndex(Dptr, host);
 
 	if (*http == 1) 		
-		Dptr->dptr[index]->GET++;
+		Dptr->dptr[domain_index]->GET++;
 	else if (*http == 2)
-		Dptr->dptr[index]->POST++;
+		Dptr->dptr[domain_index]->POST++;
 
-	request_index = CheckifRequestExists(Dptr, &index, request);
+	request_index = CheckifRequestExists(Dptr, &domain_index, request);
 
 	// if request not found set to -1 and set to num_requests when adding a new one
 	if (request_index == -1) {
-		request_index = Dptr->dptr[index]->num_requests;
+		request_index = Dptr->dptr[domain_index]->num_requests;
 		
-		AddRequest(Dptr, &index, &request_index, request);	
+		AddRequest(Dptr, &domain_index, &request_index, request);	
 	}
 	else {
-		IncrementRequest(Dptr, &index, &request_index, request);
+		IncrementRequest(Dptr, &domain_index, &request_index, request);
 	}
 
-	ip_index = CheckifIPExists(Dptr, &index, ip);
+	ip_index = CheckifIPExists(Dptr, &domain_index, ip);
 
 	// if ip not found set to -1 and set to num_ips when adding a new one
 	if (ip_index == -1) {
-		ip_index = Dptr->dptr[index]->num_ips;
+		ip_index = Dptr->dptr[domain_index]->num_ips;
 
-		AddIP(Dptr, &index, &ip_index, ip);
+		AddIP(Dptr, &domain_index, &ip_index, ip);
 	}
 	else {
-		IncrementIP(Dptr, &index, &ip_index, ip);
+		IncrementIP(Dptr, &domain_index, &ip_index, ip);
 	}
 
 	// sort the domains
-	if (Dptr->count > 1 && index != 0)
-		sortDomains(Dptr, &index);
+	if (Dptr->count > 1 && domain_index != 0)
+		sortDomains(Dptr, &domain_index);
+
+	// sort the request
+	if (Dptr->dptr[domain_index]->num_requests > 1)
+		sortRequests(Dptr->dptr[domain_index], &request_index);
+
+	// sort the IP
+	if (Dptr->dptr[domain_index]->num_ips > 1)
+		sortIPs(Dptr->dptr[domain_index], &ip_index);
 
 	// call main update ncurses function
-	NcursesUpdate(Dptr);
+	if (usePart2 == 1)
+		NcursesPart2(part2domain);
+	else
+		NcursesPart1(Dptr);
 	return;
 }
 	
@@ -536,8 +635,8 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 return;
 }
 
-int promiscuous(pcap_t *handle, char *dev, char *errbuf) {
-
+int promiscuous(pcap_t *handle, char *dev, char *errbuf)
+{
 
 	// open interface in promiscuous mode
 	handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
@@ -631,7 +730,8 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 /*
  * function to start up Ncurses
  */
-int NcursesInit() {
+int NcursesInit() 
+{
 	
 	// Start up Ncurses and clear screen
 	initscr();
@@ -648,11 +748,15 @@ int NcursesInit() {
 	getmaxyx(stdscr, rows, columns);
 
 	/* initialize pads
-	 * part1 = Full summary of domains and their requests
-	 * part2 = domain specific stats with IPs and URLs
+	 * p1 = Full summary of domains and their requests
+	 * p1index = User Input
+	 * p2ips = domains specific stats IP
+	 * p2requests = domain specific stats URLs
 	 */	
-	part1 = newpad(rows, columns-3); // hold Summary of Domains
-	part1_index = newpad(rows-1, 2); // hold indexes
+	p1 = newpad(rows, columns-3); // hold Summary of Domains
+	p1index = newpad(rows-1, 2); // hold indexes
+	p2ips = newpad(rows, 20);
+	p2requests = newpad(rows, columns-25);
 
 	move(0,0);
 	printw("rows = %d\ncolumns = %d\n", rows, columns);
@@ -662,19 +766,25 @@ int NcursesInit() {
 
 	clear();
 	refresh();
-
 }
 
 /*
  * function to free up all resources properly
  */
-CleanExit(Domains *Dptr) {
+CleanExit(Domains *Dptr) 
+{
 
 	struct bpf_program *fp2;
 	fp2 = Dptr->fp;
 	
-	werase(part1);
-	PREFRESH1;
+	werase(p1);
+	PREFRESHP1;
+	werase(p1index);
+	PREFRESHP1INDEX;
+	werase(p2requests);
+	PREFRESHP2REQUESTS;
+	werase(p2ips);
+	PREFRESHP2IPS;
 	move(0, 0);
     addstr("Shutting Down\n");
 	refresh();
@@ -696,18 +806,22 @@ CleanExit(Domains *Dptr) {
 /*
  * function to shut down Ncurses
  */
-int NcursesExit() {
+int NcursesExit() 
+{
 
 	// Cleanup Ncurses
-	delwin(part1);
-	delwin(part1_index);
+	delwin(p1);
+	delwin(p1index);
+	delwin(p2ips);
+	delwin(p2requests);
 	endwin();
 }
 
 /* 
  * function to have thread run for user input
  */
-void UserInput(Domains *Dptr) {
+void UserInput(Domains *Dptr) 
+{
 
 	int selection = 0, input = 0;
 
@@ -717,43 +831,69 @@ void UserInput(Domains *Dptr) {
 	// turn off cursor
 	curs_set(0);
 
-	waddstr(part1_index, "->");
+	waddstr(p1index, "->");
 
-	PREFRESH2;
+	PREFRESHP1INDEX;
 	
 	do {
 		input = getchar();
 
 		switch(input) {
 			case 'j': // move down
-				wmove(part1_index, selection, 0);
-				werase(part1_index);
-				selection++;
-				wmove(part1_index, selection, 0);
-				waddstr(part1_index, "->");
-				PREFRESH2;
+				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
+					wmove(p1index, selection, 0);
+					werase(p1index);
+					selection++;
+					wmove(p1index, selection, 0);
+					waddstr(p1index, "->");
+					PREFRESHP1INDEX;
+				}
 				break;
 			case 'k': // move up
-				wmove(part1_index, selection, 0);
-				werase(part1_index);
-				selection--;
-				wmove(part1_index, selection, 0);
-				waddstr(part1_index, "->");
-				//pechochar(part1_index, '-');
-				touchwin(part1_index);
-				PREFRESH2;
+				if ((selection > 0) && (usePart2 == 0)) {
+					wmove(p1index, selection, 0);
+					werase(p1index);
+					selection--;
+					wmove(p1index, selection, 0);
+					waddstr(p1index, "->");
+					PREFRESHP1INDEX;
+				}
 				break;
-			case ENTER: // switch to part 2 for domain
+			case 'e': // switch to part 2 for domain
+				if (usePart2 == 0) {
+					part2domain = Dptr->dptr[selection];
+					usePart2 = 1;
+				}
 				break;
 			case 'i': // switch to part 1
+				if (usePart2 == 1) {
+					usePart2 = 0;
+					part2domain = NULL;
+				}
 				break;
 			default:
 				break;
 		}
 	} while (input != 'q');
-		werase(part1_index);
-		PREFRESH2;
+		werase(p1index);
+		PREFRESHP1INDEX;
 		CleanExit(Dptr);
+}
+
+/*
+ * function to have thread switch between parts
+ */
+void PartSwitcher(Domains *Dptr)
+{
+	for(;;) {
+		do {
+		} while (usePart2 == 0);
+		NcursesPart2(part2domain);
+
+		do {
+		} while (usePart2 == 1);
+		NcursesPart1(Dptr);
+	}
 }
 
 int main(int argc, char *argv[])  {
@@ -762,7 +902,9 @@ int main(int argc, char *argv[])  {
 
 	pcap_t *handle = NULL;
 
-	pthread_t user_input;
+	pthread_t user_input, part_switcher;
+
+	usePart2 = 0;
 
 	Domains *Dptr;
 
@@ -783,6 +925,9 @@ int main(int argc, char *argv[])  {
 
 	// start up user input thread
 	pthread_create (&user_input, NULL, (void *) &UserInput, (void *) Dptr);
+
+	// start up part_switcher thread
+	pthread_create (&part_switcher, NULL, (void *) &PartSwitcher, (void *) Dptr);
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, Dptr);

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <errno.h>
 #include <sys/types.h>
@@ -12,6 +13,9 @@
 #include <ncurses.h>
 #include <signal.h>
 #include <pthread.h>
+
+/* program version */
+float VERSION = 0.8;
 
 /* default snap length (maximum bytes per packet to capture) */
 #define SNAP_LEN 1518
@@ -108,6 +112,7 @@ struct sniff_tcp {
 struct Domains {
 	u_int count;
 	struct Domain *dptr[DOMAINS];
+	char *interface;
 	struct bpf_program *fp;
 	pcap_t *handle;
 };
@@ -496,8 +501,6 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 Domains *Initialize()
 {
 	Domains *Dptr = calloc(1, sizeof(Domains));
-	Domains *domains = calloc(1, sizeof(struct Domain));
-	Dptr = domains;
 	Dptr->count = 0;
 
 	return Dptr;
@@ -715,7 +718,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 	signal(SIGINT, mysighand);
 
 	// fire up Ncurses
-	NcursesInit();
+	NcursesInit(Dptr);
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
 		fprintf(stderr, "Can't get netmask for device %s\n", dev);
@@ -760,7 +763,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 /*
  * function to start up Ncurses
  */
-int NcursesInit() 
+int NcursesInit(Domains *Dptr) 
 {
 	
 	// Start up Ncurses and clear screen
@@ -790,7 +793,8 @@ int NcursesInit()
 
 	move(0,0);
 	printw("rows = %d\ncolumns = %d\n", rows, columns);
-	addstr("Capture starting\n");
+	printw("Capture starting using %s\n", Dptr->interface);
+	//addstr("Capture starting\n");
 	refresh();
 	sleep(1);
 
@@ -928,22 +932,77 @@ void PartSwitcher(Domains *Dptr)
 	}
 }
 
+/*
+ * function to print command usage
+ */
+void PrintUsage(char **argv, Domains *Dptr)
+{
+	fprintf(stderr, "%s %.1f\n", argv[0], VERSION);
+	fprintf(stderr, "Usage: %s [-i] [-i interface]\n", argv[0]);
+	free(Dptr);
+	exit(1);
+}
+
+/*
+ * function to parse through command line arguments
+ * -i interface
+ */
+char * ParseArguments(int *argc, char **argv, Domains *Dptr)
+{
+	int opt = 0;
+	char *interface = NULL;
+
+	while ((opt = getopt(*argc, argv, "i:h")) != -1) {
+		switch(opt) {
+    		case 'i':
+    			interface = optarg;
+    			break;
+			case 'h':
+				PrintUsage(argv, Dptr);
+    		case '?':  // if user does not use argument with -i
+    			if (optopt == 'i') {
+					PrintUsage(argv, Dptr);
+  				} else {
+					PrintUsage(argv, Dptr);
+  				}
+  				break;
+ 		}
+ 	}
+	return interface;
+}
+
 int main(int argc, char *argv[])  {
 
 	int i, j, k;
 
+	// main capture pointer
 	pcap_t *handle = NULL;
 
+	// thread variables
 	pthread_t user_input, part_switcher;
 
+	// have Part1 ready to display
 	usePart2 = 0;
 
+	// variables for capture()
+	char *dev, errbuf[PCAP_ERRBUF_SIZE];
+
+	// main data structure parent
 	Domains *Dptr;
 
-	char *dev, errbuf[PCAP_ERRBUF_SIZE];
-	
-	// grab default interface
-	dev = pcap_lookupdev(errbuf);
+	// Initialize data structures
+	Dptr = Initialize();
+
+	// parse arg grab interface name
+	if (argc > 1) {
+		dev = ParseArguments(&argc, argv, Dptr);
+		Dptr->interface = dev;
+	}
+	else {
+		// grab default interface
+		dev = pcap_lookupdev(errbuf);
+		Dptr->interface = "eth0";
+	}
 
 	if (dev == NULL) {
 		fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
@@ -951,9 +1010,6 @@ int main(int argc, char *argv[])  {
 	}
 
 	fprintf(stderr, "Device: %s\n", dev);
-
-	// Initialize data structures
-	Dptr = Initialize();
 
 	// start up user input thread
 	pthread_create (&user_input, NULL, (void *) &UserInput, (void *) Dptr);

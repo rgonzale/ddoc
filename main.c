@@ -54,6 +54,7 @@ int rows, columns;
 //char *part2domain;
 struct Domain *part2domain;
 int usePart2;
+int Pause;
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -487,6 +488,10 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Dptr->dptr[domain_index]->num_ips > 1)
 		ip_index = sortIPs(Dptr->dptr[domain_index], &ip_index);
 
+	// check if Pause is set
+	if (Pause)
+		return;
+
 	// call main update ncurses function
 	if (usePart2 == 1)
 		NcursesPart2(part2domain);
@@ -851,6 +856,14 @@ int NcursesExit()
 	endwin();
 }
 
+/*
+ * function to resize screen when window has been resized
+ */
+void ScreenResize()
+{
+	getmaxyx(stdscr, rows, columns);
+}
+
 /* 
  * function to have thread run for user input
  */
@@ -873,6 +886,18 @@ void UserInput(Domains *Dptr)
 		input = getchar();
 
 		switch(input) {
+			case 'e': // switch to part 2 for domain
+				if (usePart2 == 0) {
+					part2domain = Dptr->dptr[selection];
+					usePart2 = 1;
+				}
+				break;
+			case 'i': // switch to part 1
+				if (usePart2 == 1) {
+					usePart2 = 0;
+					part2domain = NULL;
+				}
+				break;
 			case 'j': // move down
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
 					wmove(p1index, selection, 0);
@@ -893,17 +918,24 @@ void UserInput(Domains *Dptr)
 					PREFRESHP1INDEX;
 				}
 				break;
-			case 'e': // switch to part 2 for domain
-				if (usePart2 == 0) {
-					part2domain = Dptr->dptr[selection];
-					usePart2 = 1;
+			case 'p': // pause/resume
+				if (Pause == 0)
+					Pause = 1;
+				else {
+					Pause = 0;
+					if (usePart2)
+						NcursesPart2(part2domain);
+					else
+						NcursesPart1(Dptr);
 				}
 				break;
-			case 'i': // switch to part 1
-				if (usePart2 == 1) {
-					usePart2 = 0;
-					part2domain = NULL;
-				}
+			
+			case 'r': // screen resize
+				ScreenResize();
+				PREFRESHP1;
+				PREFRESHP1INDEX;
+				PREFRESHP2IPS;
+				PREFRESHP2REQUESTS;
 				break;
 			default:
 				break;
@@ -983,6 +1015,9 @@ int main(int argc, char *argv[])  {
 
 	// have Part1 ready to display
 	usePart2 = 0;
+
+	// have pause turned off
+	Pause = 0;
 
 	// variables for capture()
 	char *dev, errbuf[PCAP_ERRBUF_SIZE];

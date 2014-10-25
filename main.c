@@ -285,49 +285,64 @@ int GetDomainIndex(Domains *Dptr, char *host)
 /*
  * sort Domain function
  */
-void sortDomains(Domains *Dptr, int *domain_index)
+int sortDomains(Domains *Dptr, int *domain_index)
 {
-	int i;
+	int i, index = -1;
 	struct Domain *tmp;
-		for (i = *domain_index; i > 0; i--) {
-			if (Dptr->dptr[i]->total_requests > Dptr->dptr[i-1]->total_requests) {
-				tmp = Dptr->dptr[i];
-				Dptr->dptr[i] = Dptr->dptr[i-1];
-				Dptr->dptr[i-1] = tmp;	
-			}
+	for (i = *domain_index; i > 0; i--) {
+		if (Dptr->dptr[i]->total_requests > Dptr->dptr[i-1]->total_requests) {
+			tmp = Dptr->dptr[i];
+			Dptr->dptr[i] = Dptr->dptr[i-1];
+			Dptr->dptr[i-1] = tmp;	
+			index = i-1;
+		}
 	}
+	if (index != -1)
+		return index;
+	else
+		return *domain_index;
 }
 
 /*
  * sort Request function
  */
-void sortRequests(Domain *dptr, int *request_index)
+int sortRequests(Domain *dptr, int *request_index)
 {
-	int i;
+	int i, index = -1;
 	struct Request *tmp;
-		for (i = *request_index; i > 0; i--) {
-			if (dptr->requests[i]->count > dptr->requests[i-1]->count) {
-				tmp = dptr->requests[i];
-				dptr->requests[i] = dptr->requests[i-1];
-				dptr->requests[i-1] = tmp;	
-			}
+	for (i = *request_index; i > 0; i--) {
+		if (dptr->requests[i]->count > dptr->requests[i-1]->count) {
+			tmp = dptr->requests[i];
+			dptr->requests[i] = dptr->requests[i-1];
+			dptr->requests[i-1] = tmp;	
+			index = i-1;
+		}
 	}
+	if (index != -1)
+		return index;
+	else
+		return *request_index;
 }
 
 /*
  * sort IP function
  */
-void sortIPs(Domain *dptr, int *ip_index)
+int sortIPs(Domain *dptr, int *ip_index)
 {
-	int i;
+	int i, index = -1;
 	struct IP *tmp;
-		for (i = *ip_index; i > 0; i--) {
-			if (dptr->ips[i]->count > dptr->ips[i-1]->count) {
-				tmp = dptr->ips[i];
-				dptr->ips[i] = dptr->ips[i-1];
-				dptr->ips[i-1] = tmp;	
-			}
+	for (i = *ip_index; i > 0; i--) {
+		if (dptr->ips[i]->count > dptr->ips[i-1]->count) {
+			tmp = dptr->ips[i];
+			dptr->ips[i] = dptr->ips[i-1];
+			dptr->ips[i-1] = tmp;	
+			index = i-1;
+		}
 	}
+	if (index != -1)
+		return index;
+	else
+		return *ip_index;
 }
 
 /*
@@ -412,10 +427,19 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 {
 	int domain_index, request_index, ip_index;
 	
-	if (!CheckifDomainExists(Dptr, host))
-		AddDomain(Dptr, host);	
+	/*
+	domain_index = 0;
+	request_index = 0;
+	ip_index = 0;
+	*/
 
 	domain_index = GetDomainIndex(Dptr, host);
+
+	/* new code to try */
+	if (domain_index == -1) {
+		domain_index = Dptr->count;
+		AddDomain(Dptr, host);
+	}
 
 	if (*http == 1) 		
 		Dptr->dptr[domain_index]->GET++;
@@ -448,15 +472,15 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 
 	// sort the domains
 	if (Dptr->count > 1 && domain_index != 0)
-		sortDomains(Dptr, &domain_index);
+		domain_index = sortDomains(Dptr, &domain_index);
 
 	// sort the request
 	if (Dptr->dptr[domain_index]->num_requests > 1)
-		sortRequests(Dptr->dptr[domain_index], &request_index);
+		request_index = sortRequests(Dptr->dptr[domain_index], &request_index);
 
 	// sort the IP
 	if (Dptr->dptr[domain_index]->num_ips > 1)
-		sortIPs(Dptr->dptr[domain_index], &ip_index);
+		ip_index = sortIPs(Dptr->dptr[domain_index], &ip_index);
 
 	// call main update ncurses function
 	if (usePart2 == 1)
@@ -625,9 +649,15 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 
 		// host
 		host = strstr(payload, "Host: ");
-		num_host = strcspn(host, "\r");
+		if (host == NULL)
+			snprintf(host_clean, 5, "NULL");
+		else {
+			num_host = strcspn(host, "\r");
+			
+			// "+6" by exclude "Host: "
+			strncpy(host_clean, host+6, num_host-6);
+		}
 		//memset(host_clean, '\0', 32);
-		strncpy(host_clean, host+6, num_host-6);
 		// send results in
 		Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
 	}
@@ -887,10 +917,12 @@ void PartSwitcher(Domains *Dptr)
 {
 	for(;;) {
 		do {
+			sleep(1);
 		} while (usePart2 == 0);
 		NcursesPart2(part2domain);
 
 		do {
+			sleep(1);
 		} while (usePart2 == 1);
 		NcursesPart1(Dptr);
 	}

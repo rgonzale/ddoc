@@ -1,4 +1,12 @@
+//
+//  ddoc.c
+//
+//  Tristan Gonzalez, ddoc, a web traffic statistics collector
+//  Copyright (c) 2014 Tristan Gonzalez. All rights reserved.
+//  rgonzale@darkterminal.net
+//
 // credits to Tim Carstens sniffer.c
+//
 #include <pcap.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,14 +46,19 @@ float VERSION = 0.8;
 /* Definition for the ENTER key representing integer 10 */
 #define ENTER 10
 
-/* Definintion for refreshing the pads */
-#define PREFRESHP1 prefresh(p1, 0, 0, 0, 3, rows, columns);
-#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 1, rows, 2);
-#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 0, 0, rows, 19);
-#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 0, 25, rows, columns);
+/* Macros for refreshing the pads */
+#define PREFRESHP1HEAD prefresh(p1head, 0, 0, 0, 3, 0, columns);
+#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, rows-2, 1);
+#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, rows-1, columns);
+#define PREFRESHP2HEAD prefresh(p2head, 0, 0, 0, 0, 0, columns);
+#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, rows, 30);
+#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, rows, columns);
 
-/* Defining Ncurses Pads */
-WINDOW *p1, *p1index, *p2ips, *p2requests;
+/* Declaring Ncurses Pads */
+WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
+
+/* Declaring Ncurses Backup Pads to save state while paused */
+WINDOW *p1domains_backup, *p1index_backup, *p2ips_backup, *p2requests_backup;
 
 /* Defining Ncurses rows and columns */
 int rows, columns;
@@ -55,6 +68,7 @@ int rows, columns;
 struct Domain *part2domain;
 int usePart2;
 int Pause;
+int Shutdown;
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -352,6 +366,65 @@ int sortIPs(Domain *dptr, int *ip_index)
 }
 
 /*
+ * function to display intro screen
+ */
+void DisplayIntro(Domains *Dptr)
+{
+	clear();
+	move(0,0);
+	printw("rows = %d\ncolumns = %d\n", rows, columns);
+	printw("Capture starting using %s\n", Dptr->interface);
+	refresh();
+	sleep(1);
+	wmove(p1index, 0, 0);
+	waddstr(p1index, "->");
+}
+
+/*
+ * function to erase all data from the screen
+ */
+void EraseAll()
+{
+	werase(p1index);
+	werase(p1domains);
+	werase(p2ips);
+	werase(p2requests);
+	clear();	
+}
+/*
+ * function to refresh all pads
+ */
+void RefreshAll()
+{
+	PREFRESHP1DOMAINS;
+	PREFRESHP1INDEX;
+	PREFRESHP2IPS;
+	PREFRESHP2REQUESTS;
+	refresh();
+}
+
+/*
+ * function to refresh pads in Part1
+ */
+void Part1Refresh()
+{
+	PREFRESHP1INDEX;
+	PREFRESHP1DOMAINS;
+}
+
+/*
+ * function to refresh pads in Part2
+ */
+void Part2Refresh()
+{
+	PREFRESHP2HEAD;
+	PREFRESHP2IPS;
+	PREFRESHP2REQUESTS;
+	clear();
+	refresh();
+}
+
+/*
  * Ncurses Part1 - Summary of Domains
  */
 void NcursesPart1(Domains *Dptr)
@@ -359,24 +432,34 @@ void NcursesPart1(Domains *Dptr)
 	int i;
 
 	// clear up screen
-	werase(p2requests);
-	PREFRESHP2REQUESTS;
+	werase(p2head);
 	werase(p2ips);
-	PREFRESHP2IPS;
+	werase(p2requests);
+	Part2Refresh();
 
+	// print header
+	wmove(p1head, 0, 0);
+	
+	if (Pause)
+		waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\t\t*Paused*\n");
+	else
+		waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\n");
+
+	PREFRESHP1HEAD;
+	
+	// refresh index arrow
 	PREFRESHP1INDEX;
 
 	// move to the top left corner and output Domain Summary Statistics (Part 1)
-	wmove(p1, 0, 0);
-	waddstr(p1, "Total Requests\tGET\tPOST\tDomain\n");
+	wmove(p1domains, 0, 0);
 	for (i = 0; i < Dptr->count; i++)
 	//for (i = Dptr->count - 1; i > -1; i--)
-		wprintw(p1, "%d\t\t%d\t%d\t%s\n", 	Dptr->dptr[i]->total_requests, 
-												Dptr->dptr[i]->GET, 
-												Dptr->dptr[i]->POST, 
-												Dptr->dptr[i]->name);
+		wprintw(p1domains, "%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
+														Dptr->dptr[i]->GET, 
+														Dptr->dptr[i]->POST, 
+														Dptr->dptr[i]->name);
 
-	PREFRESHP1;
+	PREFRESHP1DOMAINS;
 }
 
 /*
@@ -387,33 +470,39 @@ void NcursesPart2(Domain *dptr)
 	int i;
 
 	// clear up screen
-	werase(p1);
+	werase(p1head);
 	werase(p1index);
-	PREFRESHP1;
-	PREFRESHP1INDEX;
+	werase(p1domains);
+	Part1Refresh();
+
+	// move to the top left of p2requests pad 
+	wmove(p2head, 0, 0);
+	if (Pause)
+		wprintw(p2head, "IPs:count  *Paused*\t%s\t\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n", 
+											dptr->name,
+											dptr->GET,
+											dptr->POST,
+											dptr->total_requests);
+	else
+		wprintw(p2head, "IPs:count\t\t%s\t\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n", 
+											dptr->name,
+											dptr->GET,
+											dptr->POST,
+											dptr->total_requests);
+
+	PREFRESHP2HEAD;
 
 	// move to top left of p2ips pad
 	wmove(p2ips, 0, 0);
-	waddstr(p2ips, "IPs");
-	PREFRESHP2IPS;
 
-	// output IPs
-	wmove(p2ips, 2, 0);
 	for (i = 0; i < dptr->num_ips; i++)
 		wprintw(p2ips, "%s: %d\n",	dptr->ips[i]->ip,
 									dptr->ips[i]->count);	
 
 	PREFRESHP2IPS;
 
-	// move to the top left of p2requests pad 
-	wmove(p2requests, 0, 0);
-	wprintw(p2requests, "%s\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n\n", 
-											dptr->name,
-											dptr->GET,
-											dptr->POST,
-											dptr->total_requests);
-
 	// output URLs
+	wmove(p2requests, 0, 0);
 	for (i = 0; i < dptr->num_requests; i++)
 		wprintw(p2requests, "count: %d\t%s\n",	dptr->requests[i]->count,
 												dptr->requests[i]->url);	
@@ -488,8 +577,8 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Dptr->dptr[domain_index]->num_ips > 1)
 		ip_index = sortIPs(Dptr->dptr[domain_index], &ip_index);
 
-	// check if Pause is set
-	if (Pause)
+	// check if Pause or Shutdown is set
+	if (Pause || Shutdown)
 		return;
 
 	// call main update ncurses function
@@ -771,8 +860,11 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 int NcursesInit(Domains *Dptr) 
 {
 	
-	// Start up Ncurses and clear screen
+	// Start up Ncurses
 	initscr();
+
+	// turn off cursor
+	curs_set(0);
 
 	// enable colors
 	if (has_colors() == TRUE)
@@ -786,25 +878,21 @@ int NcursesInit(Domains *Dptr)
 	getmaxyx(stdscr, rows, columns);
 
 	/* initialize pads
-	 * p1 = Full summary of domains and their requests
+	 * p1head = Header
 	 * p1index = User Input
+	 * p1domains = Full summary of domains and their requests
+	 * p2head = Header
 	 * p2ips = domains specific stats IP
 	 * p2requests = domain specific stats URLs
 	 */	
-	p1 = newpad(rows, columns-3); // hold Summary of Domains
+	p1head = newpad(1, columns-3);
 	p1index = newpad(rows-1, 2); // hold indexes
-	p2ips = newpad(rows, 20);
-	p2requests = newpad(rows, columns-25);
-
-	move(0,0);
-	printw("rows = %d\ncolumns = %d\n", rows, columns);
-	printw("Capture starting using %s\n", Dptr->interface);
-	//addstr("Capture starting\n");
-	refresh();
-	sleep(1);
-
-	clear();
-	refresh();
+	p1domains = newpad(rows-1, columns-3); // hold Summary of Domains
+	p2head = newpad(1, columns);
+	p2ips = newpad(rows-2, 31);
+	p2requests = newpad(rows-2, columns-32);
+	
+	DisplayIntro(Dptr);
 }
 
 /*
@@ -816,8 +904,8 @@ CleanExit(Domains *Dptr)
 	struct bpf_program *fp2;
 	fp2 = Dptr->fp;
 	
-	werase(p1);
-	PREFRESHP1;
+	werase(p1domains);
+	PREFRESHP1DOMAINS;
 	werase(p1index);
 	PREFRESHP1INDEX;
 	werase(p2requests);
@@ -849,8 +937,10 @@ int NcursesExit()
 {
 
 	// Cleanup Ncurses
-	delwin(p1);
+	delwin(p1head);
 	delwin(p1index);
+	delwin(p1domains);
+	delwin(p2head);
 	delwin(p2ips);
 	delwin(p2requests);
 	endwin();
@@ -872,14 +962,11 @@ void UserInput(Domains *Dptr)
 
 	int selection = 0, input = 0;
 
-	while (Dptr->count < 1)
-		sleep(1);
-
 	// turn off cursor
 	curs_set(0);
 
-	waddstr(p1index, "->");
-
+	//wmove(p1index, 0, 0);
+	//waddstr(p1index, "->");
 	PREFRESHP1INDEX;
 	
 	do {
@@ -890,12 +977,14 @@ void UserInput(Domains *Dptr)
 				if (usePart2 == 0) {
 					part2domain = Dptr->dptr[selection];
 					usePart2 = 1;
+					NcursesPart2(part2domain);
 				}
 				break;
 			case 'i': // switch to part 1
 				if (usePart2 == 1) {
 					usePart2 = 0;
 					part2domain = NULL;
+					NcursesPart1(Dptr);
 				}
 				break;
 			case 'j': // move down
@@ -919,28 +1008,63 @@ void UserInput(Domains *Dptr)
 				}
 				break;
 			case 'p': // pause/resume
-				if (Pause == 0)
+				// Pausing
+				if (Pause == 0) {
 					Pause = 1;
+					
+					// if packet capture hasn't started
+					if (Dptr->count == 0) {
+						clear();
+						move(0, 0);
+						addstr("Paused");
+						refresh();
+					}
+					// packet capture has already started
+					else {
+						if (usePart2)
+							NcursesPart2(part2domain);
+						else
+							NcursesPart1(Dptr);
+					}
+				}
+				// Unpausing
 				else {
 					Pause = 0;
+					// if packet capture hasn't started
+					if (Dptr->count == 0)
+						DisplayIntro(Dptr);
+					// packet capture has already started
+					else {
+						if (usePart2)
+							NcursesPart2(part2domain);
+						else
+							NcursesPart1(Dptr);
+					}
+				}
+				break;
+			case 'r': // screen resize
+				clear();
+				move(0, 0);
+				addstr("Resizing screen");
+				refresh();
+				ScreenResize();
+				sleep(1);
+
+				// if packet capture has already started
+				if (Dptr->count > 0) {
 					if (usePart2)
 						NcursesPart2(part2domain);
 					else
 						NcursesPart1(Dptr);
 				}
-				break;
-			
-			case 'r': // screen resize
-				ScreenResize();
-				PREFRESHP1;
-				PREFRESHP1INDEX;
-				PREFRESHP2IPS;
-				PREFRESHP2REQUESTS;
+				else
+					DisplayIntro(Dptr);
 				break;
 			default:
 				break;
 		}
 	} while (input != 'q');
+		Shutdown = 1;
 		werase(p1index);
 		PREFRESHP1INDEX;
 		CleanExit(Dptr);
@@ -955,12 +1079,30 @@ void PartSwitcher(Domains *Dptr)
 		do {
 			sleep(1);
 		} while (usePart2 == 0);
-		NcursesPart2(part2domain);
+		if (Pause) {
+			werase(p1domains);
+			werase(p1index);
+			PREFRESHP1DOMAINS;
+			PREFRESHP1INDEX;
+			PREFRESHP2IPS;
+			PREFRESHP2REQUESTS;
+		}
+		else
+			NcursesPart2(part2domain);
 
 		do {
 			sleep(1);
 		} while (usePart2 == 1);
-		NcursesPart1(Dptr);
+		if (Pause) {
+			werase(p2requests);
+			werase(p2ips);
+			PREFRESHP2REQUESTS;
+			PREFRESHP2IPS;
+			PREFRESHP1INDEX;
+			PREFRESHP1DOMAINS;
+		}
+		else
+			NcursesPart1(Dptr);
 	}
 }
 

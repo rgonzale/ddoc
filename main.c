@@ -48,11 +48,15 @@ float VERSION = 0.8;
 
 /* Macros for refreshing the pads */
 #define PREFRESHP1HEAD prefresh(p1head, 0, 0, 0, 3, 0, columns);
-#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, rows-2, 1);
-#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, rows-1, columns);
+//#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, rows-2, 1);
+//#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, rows-1, columns);
+#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, part1rows, 1);
+#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, part1rows, columns);
 #define PREFRESHP2HEAD prefresh(p2head, 0, 0, 0, 0, 0, columns);
-#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, rows, 30);
-#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, rows, columns);
+//#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, rows, 30);
+//#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, rows, columns);
+#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, part2rows, 30);
+#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, part2rows, columns);
 
 /* Declaring Ncurses Pads */
 WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
@@ -61,7 +65,11 @@ WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
 WINDOW *p1domains_backup, *p1index_backup, *p2ips_backup, *p2requests_backup;
 
 /* Defining Ncurses rows and columns */
-int rows, columns;
+int rows, columns, part1rows, part2rows;
+
+/* Defining Ncurses scrolling variables */
+int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop;
+#define PREFRESHP1SCROLL prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
 
 /* Domain string and boolean int for switching between part1 and part2 */
 //char *part2domain;
@@ -142,7 +150,7 @@ struct Domain {
 		u_int num_requests;
 		u_int total_requests;
 		u_int num_ips;
-		char name[32];
+		char name[64];
 		struct Request *requests[REQUESTS];
 		struct IP *ips[IPS];
 };
@@ -154,7 +162,7 @@ typedef struct Domain Domain;
  */
 struct Request {
 		u_int count;	
-		char url[32];
+		char url[128];
 };
 
 typedef struct Request Request;
@@ -181,7 +189,7 @@ void AddDomain(Domains *Dptr, char *host)
 	
 	Dptr->dptr[count] = domain;
 	Dptr->count++;
-	strncpy(Dptr->dptr[count]->name, host, 32);
+	strncpy(Dptr->dptr[count]->name, host, 64);
 	Dptr->dptr[count]->GET = 0;
 	Dptr->dptr[count]->POST = 0;
 	Dptr->dptr[count]->num_requests = 0;
@@ -202,7 +210,7 @@ void AddRequest(Domains *Dptr, int *domain_index, int *request_index, char *req)
 	Dptr->dptr[*domain_index]->total_requests++;
 	Dptr->dptr[*domain_index]->requests[*request_index]->count = 0;
 	Dptr->dptr[*domain_index]->requests[*request_index]->count++;
-	strncpy(Dptr->dptr[*domain_index]->requests[*request_index]->url, req, 32);
+	strncpy(Dptr->dptr[*domain_index]->requests[*request_index]->url, req, 128);
 	
 	return;
 }
@@ -425,11 +433,37 @@ void Part2Refresh()
 }
 
 /*
+ * function to resize Part1
+ */
+void Part1Resize()
+{
+	delwin(p1index);
+	delwin(p1domains);
+	p1index = newpad(part1rows*2, 2);
+	p1domains = newpad(part1rows*2, columns-3);
+}
+
+/*
+ * function to resize Part2
+ */
+void Part2Resize()
+{
+	delwin(p2ips);
+	delwin(p2requests);
+	p2ips = newpad(part2rows*2, 2);
+	p2requests = newpad(part2rows*2, columns-3);
+}
+
+/*
  * Ncurses Part1 - Summary of Domains
  */
 void NcursesPart1(Domains *Dptr)
 {
 	int i;
+
+	// check if Part 1 needs its pads resized
+	if (Dptr->count == rows-1)
+		Part1Resize();
 
 	// clear up screen
 	werase(p2head);
@@ -446,9 +480,6 @@ void NcursesPart1(Domains *Dptr)
 		waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\n");
 
 	PREFRESHP1HEAD;
-	
-	// refresh index arrow
-	PREFRESHP1INDEX;
 
 	// move to the top left corner and output Domain Summary Statistics (Part 1)
 	wmove(p1domains, 0, 0);
@@ -460,6 +491,9 @@ void NcursesPart1(Domains *Dptr)
 														Dptr->dptr[i]->name);
 
 	PREFRESHP1DOMAINS;
+
+	// refresh index arrow
+	PREFRESHP1INDEX;
 }
 
 /*
@@ -663,9 +697,9 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 	int http;								/* HTTP method GET/POST */
 	char *request;							/* the actual web request url */
 	int num_request = 0, num_host = 0;		/* bytes to copy only request and host */
-	char request_clean[32];					 
+	char request_clean[128];					 
 	char *host;								/* start of Host header */
-	char host_clean[32];					/* start of Host header not including 'Host: ' */
+	char host_clean[64];					/* start of Host header not including 'Host: ' */
 
     /* declare pointers to packet headers */
     const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
@@ -733,16 +767,20 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
  */
     if ((size_payload > 0) && (http = isGETPOST(payload))) {
 
-		memset(host_clean, '\0', 32);
-		memset(request_clean, '\0', 32);
-        //printf("   Payload (%d bytes):\n", size_payload);
-		//request = (strcspn(payload, "/")+1);
-		//	printf("%.*s\n", (strcspn(payload, "/"), payload));
+		// zero out buffers
+		memset(host_clean, '\0', 64);
+		memset(request_clean, '\0', 128);
 
 		// request
 		num_request = strcspn(payload, "\r");
-		//printf("%.*s\n", num_request, payload);
-		strncpy(request_clean, payload, num_request);
+	
+		// if request is greather than 127 bytes copy 127 bytes into it and adda null byte '\0' at the end
+		if (num_request > 127) {
+			strncpy(request_clean, payload, 127);
+			request_clean[127] = '\0';
+		}
+		else
+			strncpy(request_clean, payload, num_request);
 
 		// host
 		host = strstr(payload, "Host: ");
@@ -750,11 +788,17 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 			snprintf(host_clean, 5, "NULL");
 		else {
 			num_host = strcspn(host, "\r");
-			
+		
+			// if host is greather than 63 bytes copy 63 bytes into it and adda null byte '\0' at the end
 			// "+6" by exclude "Host: "
-			strncpy(host_clean, host+6, num_host-6);
+			if (num_host > 63) {
+				strncpy(host_clean, host+6, 63);
+				host_clean[63] = '\0';
+			}
+			else
+				strncpy(host_clean, host+6, num_host-6);
+			
 		}
-		//memset(host_clean, '\0', 32);
 		// send results in
 		Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
 	}
@@ -891,6 +935,10 @@ int NcursesInit(Domains *Dptr)
 	p2head = newpad(1, columns);
 	p2ips = newpad(rows-2, 31);
 	p2requests = newpad(rows-2, columns-32);
+
+	// set dynamic rows variable to resize rows in Part1Resize() and Part2Resize()
+	part1rows = rows-1;
+	part2rows = rows-2;
 	
 	DisplayIntro(Dptr);
 }
@@ -952,6 +1000,10 @@ int NcursesExit()
 void ScreenResize()
 {
 	getmaxyx(stdscr, rows, columns);
+
+	// recalibrate numbers of rows in Part1 and Part2
+	part1rows = rows-1;
+	part2rows = rows-2;
 }
 
 /* 
@@ -961,6 +1013,12 @@ void UserInput(Domains *Dptr)
 {
 
 	int selection = 0, input = 0;
+	
+	// set scrolling variables
+	p1scrollbottom = part1rows;
+	p1scrolltop = 0;
+	p2scrollbottom = part2rows;
+	p2scrolltop = 0;
 
 	// turn off cursor
 	curs_set(0);
@@ -989,6 +1047,11 @@ void UserInput(Domains *Dptr)
 				break;
 			case 'j': // move down
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
+					if (selection == p1scrollbottom-3) {
+						p1scrolltop++;	
+						p1scrollbottom++;
+						PREFRESHP1SCROLL;
+					}
 					wmove(p1index, selection, 0);
 					werase(p1index);
 					selection++;

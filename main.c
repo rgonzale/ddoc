@@ -1046,6 +1046,8 @@ void UserInput(Domains *Dptr)
 					usePart2 = 0;
 					part2domain = NULL;
 					NcursesPart1(Dptr);
+					position = 0;
+					selection = 0;
 				}
 				break;
 			case 'j': // move down
@@ -1063,18 +1065,19 @@ void UserInput(Domains *Dptr)
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
 						wmove(p1head, 0, 60);
-						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
 						PREFRESHP1HEAD;
 					}
 					else {
-						wmove(p1index, selection, 0);
+						wmove(p1index, position, 0);
 						werase(p1index);
+						position++;
 						selection++;
-						wmove(p1index, selection, 0);
+						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
 						wmove(p1head, 0, 60);
-						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
 						PREFRESHP1HEAD;
 					}
 				}
@@ -1088,24 +1091,25 @@ void UserInput(Domains *Dptr)
 						werase(p1index);
 						p1scrolltop--;	
 						p1scrollbottom--;
+						selection--;
 						wmove(p1index, selection, 0);
 						waddstr(p1index, "->");
-						selection--;
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
 						wmove(p1head, 0, 60);
-						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
 						PREFRESHP1HEAD;
 					}
 					else {
-						wmove(p1index, selection, 0);
+						wmove(p1index, position, 0);
 						werase(p1index);
+						position--;
 						selection--;
-						wmove(p1index, selection, 0);
+						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
 						wmove(p1head, 0, 60);
-						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
 						PREFRESHP1HEAD;
 					}
 				}

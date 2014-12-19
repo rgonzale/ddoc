@@ -68,7 +68,7 @@ WINDOW *p1domains_backup, *p1index_backup, *p2ips_backup, *p2requests_backup;
 int rows, columns, part1rows, part2rows;
 
 /* Defining Ncurses scrolling variables */
-int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop;
+int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop, selection, position, input;
 #define PREFRESHP1DOMAINSSCROLL prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
 #define PREFRESHP1INDEXSCROLL prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, columns);
 
@@ -1017,7 +1017,10 @@ void ScreenResize()
 void UserInput(Domains *Dptr) 
 {
 
-	int selection = 0, position = 0, input = 0;
+	//int selection = 0, position = 0, input = 0;
+	selection = 0;
+	position = 0;
+	input = 0;
 	
 	// set scrolling variables
 	p1scrolltop = 0;
@@ -1048,13 +1051,15 @@ void UserInput(Domains *Dptr)
 					NcursesPart1(Dptr);
 					position = 0;
 					selection = 0;
+					p1scrolltop = 0;
 				}
 				break;
 			case 'j': // move down
 				// if at the bottom of the screen
 				// use Part1
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
-					if (selection == p1scrollbottom-1) {
+					//if (selection == p1scrollbottom-1) {
+					if (position == part1rows-1) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
 						p1scrolltop++;	
@@ -1086,7 +1091,8 @@ void UserInput(Domains *Dptr)
 				// if at the top of the screen
 				// usePart1
 				if ((selection > 0) && (usePart2 == 0)) {
-					if (selection == p1scrolltop) {
+					//if (selection == p1scrolltop) {
+					if (position == 0) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
 						p1scrolltop--;	

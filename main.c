@@ -69,7 +69,8 @@ int rows, columns, part1rows, part2rows;
 
 /* Defining Ncurses scrolling variables */
 int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop;
-#define PREFRESHP1SCROLL prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
+#define PREFRESHP1DOMAINSSCROLL prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
+#define PREFRESHP1INDEXSCROLL prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, columns);
 
 /* Domain string and boolean int for switching between part1 and part2 */
 //char *part2domain;
@@ -435,7 +436,7 @@ void Part2Refresh()
 /*
  * function to resize Part1
  */
-void Part1Resize()
+void Part1Resize(Domains *Dptr)
 {
 	delwin(p1index);
 	delwin(p1domains);
@@ -462,8 +463,10 @@ void NcursesPart1(Domains *Dptr)
 	int i;
 
 	// check if Part 1 needs its pads resized
-	if (Dptr->count == rows-1)
-		Part1Resize();
+	//if (Dptr->count == rows-1)
+	//if (Dptr->count >= rows-1)
+	if (Dptr->count >= part1rows-1)
+		Part1Resize(Dptr);
 
 	// clear up screen
 	werase(p2head);
@@ -495,6 +498,7 @@ void NcursesPart1(Domains *Dptr)
 	// refresh index arrow
 	PREFRESHP1INDEX;
 }
+
 
 /*
  * Ncurses Part2 - Summary of Domain
@@ -936,8 +940,9 @@ int NcursesInit(Domains *Dptr)
 	p2ips = newpad(rows-2, 31);
 	p2requests = newpad(rows-2, columns-32);
 
-	// set dynamic rows variable to resize rows in Part1Resize() and Part2Resize()
+	// set dynamic rows variable for scrolling and to resize rows in Part1Resize() and Part2Resize()
 	part1rows = rows-1;
+	p1scrollbottom = part1rows;
 	part2rows = rows-2;
 	
 	DisplayIntro(Dptr);
@@ -1012,12 +1017,10 @@ void ScreenResize()
 void UserInput(Domains *Dptr) 
 {
 
-	int selection = 0, input = 0;
+	int selection = 0, position = 0, input = 0;
 	
 	// set scrolling variables
-	p1scrollbottom = part1rows;
 	p1scrolltop = 0;
-	p2scrollbottom = part2rows;
 	p2scrolltop = 0;
 
 	// turn off cursor
@@ -1046,29 +1049,67 @@ void UserInput(Domains *Dptr)
 				}
 				break;
 			case 'j': // move down
+				// if at the bottom of the screen
+				// use Part1
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
-					if (selection == p1scrollbottom-3) {
+					if (selection == p1scrollbottom-1) {
+						wmove(p1index, selection, 0);
+						werase(p1index);
 						p1scrolltop++;	
 						p1scrollbottom++;
-						PREFRESHP1SCROLL;
+						selection++;
+						wmove(p1index, selection, 0);
+						waddstr(p1index, "->");
+						PREFRESHP1DOMAINSSCROLL;
+						PREFRESHP1INDEXSCROLL;
+						wmove(p1head, 0, 60);
+						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						PREFRESHP1HEAD;
 					}
-					wmove(p1index, selection, 0);
-					werase(p1index);
-					selection++;
-					wmove(p1index, selection, 0);
-					waddstr(p1index, "->");
-					PREFRESHP1INDEX;
+					else {
+						wmove(p1index, selection, 0);
+						werase(p1index);
+						selection++;
+						wmove(p1index, selection, 0);
+						waddstr(p1index, "->");
+						PREFRESHP1INDEX;
+						wmove(p1head, 0, 60);
+						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						PREFRESHP1HEAD;
+					}
 				}
 				break;
 			case 'k': // move up
+				// if at the top of the screen
+				// usePart1
 				if ((selection > 0) && (usePart2 == 0)) {
-					wmove(p1index, selection, 0);
-					werase(p1index);
-					selection--;
-					wmove(p1index, selection, 0);
-					waddstr(p1index, "->");
-					PREFRESHP1INDEX;
+					if (selection == p1scrolltop) {
+						wmove(p1index, selection, 0);
+						werase(p1index);
+						p1scrolltop--;	
+						p1scrollbottom--;
+						wmove(p1index, selection, 0);
+						waddstr(p1index, "->");
+						selection--;
+						PREFRESHP1DOMAINSSCROLL;
+						PREFRESHP1INDEXSCROLL;
+						wmove(p1head, 0, 60);
+						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						PREFRESHP1HEAD;
+					}
+					else {
+						wmove(p1index, selection, 0);
+						werase(p1index);
+						selection--;
+						wmove(p1index, selection, 0);
+						waddstr(p1index, "->");
+						PREFRESHP1INDEX;
+						wmove(p1head, 0, 60);
+						wprintw(p1head, "sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						PREFRESHP1HEAD;
+					}
 				}
+		
 				break;
 			case 'p': // pause/resume
 				// Pausing
@@ -1241,7 +1282,8 @@ int main(int argc, char *argv[])  {
 	else {
 		// grab default interface
 		dev = pcap_lookupdev(errbuf);
-		Dptr->interface = "eth0";
+		//Dptr->interface = "eth0";
+		Dptr->interface = dev;
 	}
 
 	if (dev == NULL) {

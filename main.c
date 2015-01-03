@@ -35,13 +35,16 @@ float VERSION = 0.8;
 #define ETHER_ADDR_LEN  6
 
 /* Maximum number of Domains */
-#define DOMAINS 1024
+#define DOMAINS 2048
 
 /* Maximum number of Requests per Domain */
-#define REQUESTS 65536 
+#define REQUESTS 131702
 
 /* Maximum number of IPs per Domain */
-#define IPS 1024
+#define IPS 131702
+
+/* Print Screen every number of seconds */
+#define SECONDS 2
 
 /* Definition for the ENTER key representing integer 10 */
 #define ENTER 10
@@ -78,6 +81,7 @@ struct Domain *part2domain;
 int usePart2;
 int Pause;
 int Shutdown;
+int realtime;
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -619,11 +623,15 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Pause || Shutdown)
 		return;
 
-	// call main update ncurses function
-	if (usePart2 == 1)
-		NcursesPart2(part2domain);
-	else
-		NcursesPart1(Dptr);
+	if (realtime == 1) {
+
+		// call main update ncurses function
+		if (usePart2 == 1)
+			NcursesPart2(part2domain);
+		else
+			NcursesPart1(Dptr);
+	}
+
 	return;
 }
 	
@@ -847,7 +855,7 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 			move(0, 0);
 			clear();
 			refresh();
-            addstr("Catching SIGINT\nShutting Down\n");
+            addstr("Inga\nCatching SIGINT\nShutting Down\n");
 			refresh();
 			sleep(1);
             TearDown(Dptr);
@@ -1069,9 +1077,9 @@ void UserInput(Domains *Dptr)
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
-						wmove(p1head, 0, 60);
-						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						PREFRESHP1HEAD;
+						//wmove(p1head, 0, 60);
+						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						//PREFRESHP1HEAD;
 					}
 					else {
 						wmove(p1index, position, 0);
@@ -1081,9 +1089,9 @@ void UserInput(Domains *Dptr)
 						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
-						wmove(p1head, 0, 60);
-						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						PREFRESHP1HEAD;
+						//wmove(p1head, 0, 60);
+						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						//PREFRESHP1HEAD;
 					}
 				}
 				break;
@@ -1102,9 +1110,9 @@ void UserInput(Domains *Dptr)
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
-						wmove(p1head, 0, 60);
-						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						PREFRESHP1HEAD;
+						//wmove(p1head, 0, 60);
+						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						//PREFRESHP1HEAD;
 					}
 					else {
 						wmove(p1index, position, 0);
@@ -1114,9 +1122,9 @@ void UserInput(Domains *Dptr)
 						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
-						wmove(p1head, 0, 60);
-						wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						PREFRESHP1HEAD;
+						//wmove(p1head, 0, 60);
+						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
+						//PREFRESHP1HEAD;
 					}
 				}
 		
@@ -1221,12 +1229,28 @@ void PartSwitcher(Domains *Dptr)
 }
 
 /*
+ * function to print to the screen every 2 seconds
+ */
+void PrintScreen(Domains *Dptr)
+{
+	for(;;) {
+		sleep(SECONDS);
+		if (Pause == 0) {
+			if (usePart2 == 0)
+				NcursesPart1(Dptr);
+			else
+				NcursesPart2(part2domain);
+		}
+	}
+}
+
+/*
  * function to print command usage
  */
 void PrintUsage(char **argv, Domains *Dptr)
 {
 	fprintf(stderr, "%s %.1f\n", argv[0], VERSION);
-	fprintf(stderr, "Usage: %s [-i] [-i interface]\n", argv[0]);
+	fprintf(stderr, "Usage: %s [-ir] [-i interface]\n", argv[0]);
 	free(Dptr);
 	exit(1);
 }
@@ -1240,13 +1264,17 @@ char * ParseArguments(int *argc, char **argv, Domains *Dptr)
 	int opt = 0;
 	char *interface = NULL;
 
-	while ((opt = getopt(*argc, argv, "i:h")) != -1) {
+	while ((opt = getopt(*argc, argv, "hi:r")) != -1) {
 		switch(opt) {
     		case 'i':
     			interface = optarg;
     			break;
 			case 'h':
 				PrintUsage(argv, Dptr);
+				break;
+			case 'r':
+				realtime = 1;
+				break;
     		case '?':  // if user does not use argument with -i
     			if (optopt == 'i') {
 					PrintUsage(argv, Dptr);
@@ -1267,13 +1295,16 @@ int main(int argc, char *argv[])  {
 	pcap_t *handle = NULL;
 
 	// thread variables
-	pthread_t user_input, part_switcher;
+	pthread_t user_input, part_switcher, print_screen;
 
 	// have Part1 ready to display
 	usePart2 = 0;
 
 	// have pause turned off
 	Pause = 0;
+
+	// set realtime to 0
+	realtime = 0;
 
 	// variables for capture()
 	char *dev, errbuf[PCAP_ERRBUF_SIZE];
@@ -1284,7 +1315,7 @@ int main(int argc, char *argv[])  {
 	// Initialize data structures
 	Dptr = Initialize();
 
-	// parse arg grab interface name
+	// parse arg grab interface nam
 	if (argc > 1) {
 		dev = ParseArguments(&argc, argv, Dptr);
 		Dptr->interface = dev;
@@ -1308,6 +1339,10 @@ int main(int argc, char *argv[])  {
 
 	// start up part_switcher thread
 	pthread_create (&part_switcher, NULL, (void *) &PartSwitcher, (void *) Dptr);
+
+	// start the Print Screen thread
+	if (realtime == 0)
+		pthread_create (&print_screen, NULL, (void *) &PrintScreen, (void *) Dptr);
 
 	//promiscuous(handle, dev, errbuf);
 	capture(handle, dev, errbuf, Dptr);

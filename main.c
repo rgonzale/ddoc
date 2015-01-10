@@ -34,14 +34,14 @@ float VERSION = 0.8;
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN  6
 
-/* Maximum number of Domains */
-#define DOMAINS 2048
+/* Starting number of struct domain pointers to hold before realloc() is called */
+#define DOMAINS 2
 
-/* Maximum number of Requests per Domain */
-#define REQUESTS 131702
+/* Starting number of struct requeset pointers to hold before realloc is called */
+#define REQUESTS 2
 
-/* Maximum number of IPs per Domain */
-#define IPS 131702
+/* Starting number of struct ip pointers to hold before realloc is called */
+#define IPS 2
 
 /* Print Screen every number of seconds */
 #define SECONDS 2
@@ -51,13 +51,9 @@ float VERSION = 0.8;
 
 /* Macros for refreshing the pads */
 #define PREFRESHP1HEAD prefresh(p1head, 0, 0, 0, 3, 0, columns);
-//#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, rows-2, 1);
-//#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, rows-1, columns);
 #define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, part1rows, 1);
 #define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, part1rows, columns);
 #define PREFRESHP2HEAD prefresh(p2head, 0, 0, 0, 0, 0, columns);
-//#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, rows, 30);
-//#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, rows, columns);
 #define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, part2rows, 30);
 #define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, part2rows, columns);
 
@@ -76,7 +72,6 @@ int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop, selection, positio
 #define PREFRESHP1INDEXSCROLL prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, columns);
 
 /* Domain string and boolean int for switching between part1 and part2 */
-//char *part2domain;
 struct Domain *part2domain;
 int usePart2;
 int Pause;
@@ -138,8 +133,9 @@ struct sniff_tcp {
  * main struct that is at the top of all the data structures
  */
 struct Domains {
-	u_int count;
-	struct Domain *dptr[DOMAINS];
+	u_int count;  // number of domains
+	u_int size;   // size of domain pointer array
+	struct Domain **dptr;  // array of pointers pointing to struct Domain
 	char *interface;
 	struct bpf_program *fp;
 	pcap_t *handle;
@@ -156,8 +152,10 @@ struct Domain {
 		u_int total_requests;
 		u_int num_ips;
 		char name[64];
-		struct Request *requests[REQUESTS];
-		struct IP *ips[IPS];
+		u_int request_size;
+		struct Request **requests;
+		u_int ip_size;
+		struct IP **ips;
 };
 
 typedef struct Domain Domain;
@@ -187,9 +185,27 @@ typedef struct IP IP;
  */
 void AddDomain(Domains *Dptr, char *host)
 {
-	int count;
+	int count = 0, size = 0;
+	Domain **tmp;
 	count = Dptr->count;
+	size = Dptr->size;
 
+	// if the number of struct Domains is the same as number of struct pointers in the array then realloc array by factor of 2
+	if (count == size) {
+		tmp = (Domain **) realloc(Dptr->dptr, (sizeof(Domain *) * size) * 2);
+		if (tmp == NULL) {
+	    	fprintf(stderr, "Realloc failed\n");
+        	exit(1);
+		}
+		else
+			Dptr->dptr = tmp;
+	}
+
+	tmp = NULL;
+	size *= 2;
+	Dptr->size = size;
+
+	// allocate memory for 1 struct domain
 	Domain *domain = calloc(1, sizeof(struct Domain));
 	
 	Dptr->dptr[count] = domain;
@@ -200,6 +216,10 @@ void AddDomain(Domains *Dptr, char *host)
 	Dptr->dptr[count]->num_requests = 0;
 	Dptr->dptr[count]->total_requests = 0;
 
+	// allocate memory for array of pointers to struct IP
+	Dptr->dptr[count]->ips = (IP **) calloc(IPS, sizeof(IP *));
+	Dptr->dptr[count]->ip_size = IPS;
+
 	return;
 }
 
@@ -208,6 +228,27 @@ void AddDomain(Domains *Dptr, char *host)
  */
 void AddRequest(Domains *Dptr, int *domain_index, int *request_index, char *req)
 {
+	int num_requests = 0, size = 0;
+	Request **tmp;
+
+	size = Dptr->dptr[*domain_index]->request_size;
+	num_requests = Dptr->dptr[*domain_index]->num_requests;
+
+	if (num_requests == size) {
+		tmp = (Request **) realloc(Dptr->dptr[*domain_index]->requests, (sizeof(Request *) * size) * 2);
+		if (tmp == NULL) {
+			fprintf(stderr, "Failed to realloc\n");
+			exit(1);
+		}
+		else
+			Dptr->dptr[*domain_index]->requests = tmp;	
+	}
+
+	tmp = NULL;
+	size *= 2;
+
+	Dptr->dptr[*domain_index]->request_size = size;
+
 	Request *request = calloc(1, sizeof(struct Request));
 
 	Dptr->dptr[*domain_index]->requests[*request_index] = request;
@@ -236,6 +277,27 @@ void IncrementRequest(Domains *Dptr, int *domain_index, int *request_index, cons
  */
 void AddIP(Domains *Dptr, int *domain_index, int *ip_index, char *ip)
 {
+	int size = 0, num_ips = 0;
+	size = Dptr->dptr[*domain_index]->ip_size;
+	num_ips = Dptr->dptr[*domain_index]->num_ips;
+
+	IP **tmp;
+
+	if (num_ips == size) {
+		tmp = (IP **) realloc(Dptr->dptr[*domain_index]->ips, (sizeof(IP *) * size) * 2);
+		if (tmp == NULL) {
+			fprintf(stderr, "Failed to realloc\n");
+			exit(1);
+		}
+		else
+			Dptr->dptr[*domain_index]->ips = tmp;
+	}
+
+	tmp = NULL;
+	size *= 2;
+
+	Dptr->dptr[*domain_index]->ip_size = size;
+
 	IP *ipaddress= calloc(1, sizeof(struct IP));
 
 	Dptr->dptr[*domain_index]->ips[*ip_index] = ipaddress;
@@ -466,9 +528,6 @@ void NcursesPart1(Domains *Dptr)
 {
 	int i;
 
-	// check if Part 1 needs its pads resized
-	//if (Dptr->count == rows-1)
-	//if (Dptr->count >= rows-1)
 	if (Dptr->count >= part1rows-1)
 		Part1Resize(Dptr);
 
@@ -491,7 +550,6 @@ void NcursesPart1(Domains *Dptr)
 	// move to the top left corner and output Domain Summary Statistics (Part 1)
 	wmove(p1domains, 0, 0);
 	for (i = 0; i < Dptr->count; i++)
-	//for (i = Dptr->count - 1; i > -1; i--)
 		wprintw(p1domains, "%d\t\t%d\t\t%d\t\t%s\n", 	Dptr->dptr[i]->total_requests, 
 														Dptr->dptr[i]->GET, 
 														Dptr->dptr[i]->POST, 
@@ -564,11 +622,9 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 {
 	int domain_index, request_index, ip_index;
 	
-	/*
 	domain_index = 0;
 	request_index = 0;
 	ip_index = 0;
-	*/
 
 	domain_index = GetDomainIndex(Dptr, host);
 
@@ -619,7 +675,7 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Dptr->dptr[domain_index]->num_ips > 1)
 		ip_index = sortIPs(Dptr->dptr[domain_index], &ip_index);
 
-	// check if Pause or Shutdown is set
+	//if (Pause == 1) return;
 	if (Pause || Shutdown)
 		return;
 
@@ -640,8 +696,15 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
  */
 Domains *Initialize()
 {
+	// allocate memory for Dptr
 	Domains *Dptr = calloc(1, sizeof(Domains));
 	Dptr->count = 0;
+	Dptr->size = 0;
+
+	// allocate memory for array of pointers to struct domain
+	Dptr->dptr = (Domain **) calloc(DOMAINS, sizeof(Domain *));
+
+	Dptr->size = DOMAINS;
 
 	return Dptr;
 }
@@ -651,19 +714,20 @@ Domains *Initialize()
  */
 void TearDown(Domains *Dptr)
 {
-	int i, j, ips = 0, domains = 0;
+	int i, j, ips = 0, size = 0, count = 0;
 
-	domains = Dptr->count;
+	size = Dptr->size;
+	count = Dptr->count;
 	
-	for (i = 0; i < domains; i++)
+	for (i = 0; i < Dptr->count; i++)
 		for (j = 0; j < Dptr->dptr[i]->num_requests; j++)
 			free(Dptr->dptr[i]->requests[j]);
 
-	for (i = 0; i < domains; i++)
+	for (i = 0; i < Dptr->count; i++)
 		for (j = 0; j < Dptr->dptr[i]->num_ips; j++)
 			free(Dptr->dptr[i]->ips[j]);
 
-	for (i = 0; i < domains; i++)
+	for (i = 0; i < count; i++)
 		free(Dptr->dptr[i]);
 
 	free(Dptr);
@@ -678,14 +742,6 @@ void TearDown(Domains *Dptr)
  */
 int isGETPOST(const u_char *payload)
 {
-/*
-	if (strncpy((char *)payload, "GET", 3) == 0)
-		return 1;
-	else if (strncpy((char *)payload, "POST", 4) == 0)
-		return 2;
-	else
-		return 0;
-*/
 
 	// GET
 	if ((payload[0] == '\x47') && (payload[1] == '\x45') && (payload[2] == '\x54'))
@@ -705,7 +761,6 @@ int isGETPOST(const u_char *payload)
 void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet)
 {
 
-    static int count = 1;                   /* packet counter */
 	int http;								/* HTTP method GET/POST */
 	char *request;							/* the actual web request url */
 	int num_request = 0, num_host = 0;		/* bytes to copy only request and host */
@@ -723,20 +778,18 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
     int size_tcp;
     int size_payload;
 
-    //printf("\nPacket number %d:\n", count);
-    count++;
 
     /* define ethernet header */
-	int num_packets = 10;           /* number of packets to capture */
     ethernet = (struct sniff_ethernet*)(packet);
 
     /* define/compute ip header offset */
     ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
     size_ip = IP_HL(ip)*4;
-    if (size_ip < 20) {
-        printf("   * Invalid IP header length: %u bytes\n", size_ip);
-        return;
-    }
+    if (size_ip < 20) return;
+    //if (size_ip < 20) {
+     //   printf("   * Invalid IP header length: %u bytes\n", size_ip);
+      //  return;
+    ///}
 
 /*
  *      *  OK, this packet is TCP.
@@ -903,7 +956,8 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 		pcap_close(handle);
 
 	// shut down Ncurses
-	NcursesExit();
+	CleanExit(Dptr);
+	//NcursesExit();
 
 	printf("\nCapture complete.\n");
 
@@ -962,9 +1016,6 @@ int NcursesInit(Domains *Dptr)
 CleanExit(Domains *Dptr) 
 {
 
-	struct bpf_program *fp2;
-	fp2 = Dptr->fp;
-	
 	werase(p1domains);
 	PREFRESHP1DOMAINS;
 	werase(p1index);
@@ -980,7 +1031,7 @@ CleanExit(Domains *Dptr)
     
 	NcursesExit();
 
-	pcap_freecode(Dptr->fp);
+	//pcap_freecode(Dptr->fp);
 
 	if (Dptr->handle != NULL)
 		pcap_close(Dptr->handle);
@@ -1024,11 +1075,13 @@ void ScreenResize()
  */
 void UserInput(Domains *Dptr) 
 {
+	int status = 0;
 
-	//int selection = 0, position = 0, input = 0;
 	selection = 0;
 	position = 0;
 	input = 0;
+	
+	int ret1 = 0;
 	
 	// set scrolling variables
 	p1scrolltop = 0;
@@ -1077,9 +1130,6 @@ void UserInput(Domains *Dptr)
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
-						//wmove(p1head, 0, 60);
-						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						//PREFRESHP1HEAD;
 					}
 					else {
 						wmove(p1index, position, 0);
@@ -1089,9 +1139,6 @@ void UserInput(Domains *Dptr)
 						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
-						//wmove(p1head, 0, 60);
-						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						//PREFRESHP1HEAD;
 					}
 				}
 				break;
@@ -1110,9 +1157,6 @@ void UserInput(Domains *Dptr)
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
 						PREFRESHP1INDEXSCROLL;
-						//wmove(p1head, 0, 60);
-						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						//PREFRESHP1HEAD;
 					}
 					else {
 						wmove(p1index, position, 0);
@@ -1122,9 +1166,6 @@ void UserInput(Domains *Dptr)
 						wmove(p1index, position, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1INDEX;
-						//wmove(p1head, 0, 60);
-						//wprintw(p1head, "pos:%d sel:%d top:%d bot:%d p1rows:%d Dptr->count:%d", position, selection, p1scrolltop, p1scrollbottom, part1rows, Dptr->count);
-						//PREFRESHP1HEAD;
 					}
 				}
 		
@@ -1189,6 +1230,7 @@ void UserInput(Domains *Dptr)
 		Shutdown = 1;
 		werase(p1index);
 		PREFRESHP1INDEX;
+		sleep(1);
 		CleanExit(Dptr);
 }
 
@@ -1197,6 +1239,7 @@ void UserInput(Domains *Dptr)
  */
 void PartSwitcher(Domains *Dptr)
 {
+	int status = 0;
 	for(;;) {
 		do {
 			sleep(1);
@@ -1233,6 +1276,7 @@ void PartSwitcher(Domains *Dptr)
  */
 void PrintScreen(Domains *Dptr)
 {
+	int status = 0;
 	for(;;) {
 		sleep(SECONDS);
 		if (Pause == 0) {
@@ -1323,7 +1367,6 @@ int main(int argc, char *argv[])  {
 	else {
 		// grab default interface
 		dev = pcap_lookupdev(errbuf);
-		//Dptr->interface = "eth0";
 		Dptr->interface = dev;
 	}
 

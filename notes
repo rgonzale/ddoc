@@ -51,3 +51,10 @@ make Domains, IP, Request array automatically grow using master list of pointers
 3. then in AddDomain, if I'm at the end of a memory block, I call a function to allocate a new memory block which will return the new pointer to the master list which will if at the end of the master list do a malloc by a factor of two to hold more pointers, copy all pointers from old master list to new master list, and increment the value holding the number of memory blocks in the Domains struct, then add the domain to the domain_master_list[element][domain]
 
 * use hash tables hcreate /usr/include/search.h
+
+segfaults
+733
+
+#5  0x00007ffff7baf518 in pcap_freecode (program=0x7fffffffe1d0) at ./gencode.c:522
+#6  0x00000000004038d4 in CleanExit (Dptr=0x606010) at main.c:1056
+

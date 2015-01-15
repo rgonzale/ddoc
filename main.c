@@ -25,6 +25,9 @@
 /* program version */
 float VERSION = 0.8;
 
+/* default port */
+#define PORT "port 80"
+
 /* default snap length (maximum bytes per packet to capture) */
 #define SNAP_LEN 1518
 
@@ -51,11 +54,11 @@ float VERSION = 0.8;
 
 /* Macros for refreshing the pads */
 #define PREFRESHP1HEAD prefresh(p1head, 0, 0, 0, 3, 0, columns);
-#define PREFRESHP1INDEX prefresh(p1index, 0, 0, 1, 0, part1rows, 1);
-#define PREFRESHP1DOMAINS prefresh(p1domains, 0, 0, 1, 3, part1rows, columns);
+#define PREFRESHP1INDEX prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, 1);
+#define PREFRESHP1DOMAINS prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
 #define PREFRESHP2HEAD prefresh(p2head, 0, 0, 0, 0, 0, columns);
-#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, part2rows, 30);
-#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, part2rows, columns);
+#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, 42, 30);
+#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, 42, columns);
 
 /* Declaring Ncurses Pads */
 WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
@@ -64,12 +67,12 @@ WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
 WINDOW *p1domains_backup, *p1index_backup, *p2ips_backup, *p2requests_backup;
 
 /* Defining Ncurses rows and columns */
-int rows, columns, part1rows, part2rows;
+int rows, columns, part1rows, part2rows, totalrowsp1, totalrowsp2;
 
 /* Defining Ncurses scrolling variables */
 int p1scrollbottom, p1scrolltop, p2scrollbottom, p2scrolltop, selection, position, input;
 #define PREFRESHP1DOMAINSSCROLL prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
-#define PREFRESHP1INDEXSCROLL prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, columns);
+#define PREFRESHP1INDEXSCROLL prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, 1);
 
 /* Domain string and boolean int for switching between part1 and part2 */
 struct Domain *part2domain;
@@ -199,11 +202,11 @@ void AddDomain(Domains *Dptr, char *host)
 		}
 		else
 			Dptr->dptr = tmp;
-	}
 
-	tmp = NULL;
-	size *= 2;
-	Dptr->size = size;
+		tmp = NULL;
+		size *= 2;
+		Dptr->size = size;
+	}
 
 	// allocate memory for 1 struct domain
 	Domain *domain = calloc(1, sizeof(struct Domain));
@@ -219,6 +222,10 @@ void AddDomain(Domains *Dptr, char *host)
 	// allocate memory for array of pointers to struct IP
 	Dptr->dptr[count]->ips = (IP **) calloc(IPS, sizeof(IP *));
 	Dptr->dptr[count]->ip_size = IPS;
+
+	// allocate memory for array of pointers to struct request
+	Dptr->dptr[count]->requests = (Request **) calloc(IPS, sizeof(Request *));
+	Dptr->dptr[count]->request_size = REQUESTS;
 
 	return;
 }
@@ -242,13 +249,13 @@ void AddRequest(Domains *Dptr, int *domain_index, int *request_index, char *req)
 		}
 		else
 			Dptr->dptr[*domain_index]->requests = tmp;	
+
+		tmp = NULL;
+		size *= 2;
+		Dptr->dptr[*domain_index]->request_size = size;
 	}
 
-	tmp = NULL;
-	size *= 2;
-
-	Dptr->dptr[*domain_index]->request_size = size;
-
+	// allocate memory for 1 struct Request
 	Request *request = calloc(1, sizeof(struct Request));
 
 	Dptr->dptr[*domain_index]->requests[*request_index] = request;
@@ -291,13 +298,13 @@ void AddIP(Domains *Dptr, int *domain_index, int *ip_index, char *ip)
 		}
 		else
 			Dptr->dptr[*domain_index]->ips = tmp;
+
+		tmp = NULL;
+		size *= 2;
+		Dptr->dptr[*domain_index]->ip_size = size;
 	}
 
-	tmp = NULL;
-	size *= 2;
-
-	Dptr->dptr[*domain_index]->ip_size = size;
-
+	// allocate memory for 1 struct IP
 	IP *ipaddress= calloc(1, sizeof(struct IP));
 
 	Dptr->dptr[*domain_index]->ips[*ip_index] = ipaddress;
@@ -485,6 +492,8 @@ void Part1Refresh()
 {
 	PREFRESHP1INDEX;
 	PREFRESHP1DOMAINS;
+	clear();
+	refresh();
 }
 
 /*
@@ -502,12 +511,20 @@ void Part2Refresh()
 /*
  * function to resize Part1
  */
-void Part1Resize(Domains *Dptr)
+//void Part1Resize(Domains *Dptr)
+void Part1Resize()
 {
+	delwin(p1head);
 	delwin(p1index);
 	delwin(p1domains);
-	p1index = newpad(part1rows*2, 2);
-	p1domains = newpad(part1rows*2, columns-3);
+	p1head = newpad(1, columns-3);
+	p1index = newpad(totalrowsp1*2, 2);
+	p1domains = newpad(totalrowsp1*2, columns-3);
+
+	totalrowsp1 *= 2;
+	PREFRESHP1HEAD;
+	PREFRESHP1DOMAINS;
+	PREFRESHP1INDEX;
 }
 
 /*
@@ -517,8 +534,8 @@ void Part2Resize()
 {
 	delwin(p2ips);
 	delwin(p2requests);
-	p2ips = newpad(part2rows*2, 2);
-	p2requests = newpad(part2rows*2, columns-3);
+	p2ips = newpad(totalrowsp2*2, 2);
+	p2requests = newpad(totalrowsp2*2, columns-3);
 }
 
 /*
@@ -528,22 +545,23 @@ void NcursesPart1(Domains *Dptr)
 {
 	int i;
 
-	if (Dptr->count >= part1rows-1)
-		Part1Resize(Dptr);
 
 	// clear up screen
 	werase(p2head);
 	werase(p2ips);
 	werase(p2requests);
-	Part2Refresh();
+	Part2Refresh(Dptr);
 
 	// print header
 	wmove(p1head, 0, 0);
 	
-	if (Pause)
-		waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\t\t*Paused*\n");
-	else
-		waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\n");
+	if (Pause) waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\t\t*Paused*\n");
+		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\ttotalrows: %i\t*Paused*\n", rows, part1rows, totalrows);
+		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\tp1scrollbottom: %i\tp1scrolltop: %i\tposition = %i\t*Paused*\n", rows, part1rows, p1scrollbottom, p1scrolltop, position);
+
+	else waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\n");
+		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\ttotalrows: %i", rows, part1rows, totalrows);
+		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i part1rows: %i p1scrollbottom: %i p1scrolltop: %i position: %i totalrows: %i stuff", rows, part1rows, p1scrollbottom, p1scrolltop, position, totalrowsp1);
 
 	PREFRESHP1HEAD;
 
@@ -626,6 +644,9 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	request_index = 0;
 	ip_index = 0;
 
+	// turn on the lock
+	//pthread_mutex_lock(&mylock);
+
 	domain_index = GetDomainIndex(Dptr, host);
 
 	/* new code to try */
@@ -675,6 +696,10 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Dptr->dptr[domain_index]->num_ips > 1)
 		ip_index = sortIPs(Dptr->dptr[domain_index], &ip_index);
 
+	// add more rows if need be
+	if (Dptr->count >= totalrowsp1 - 1)
+		Part1Resize();
+
 	//if (Pause == 1) return;
 	if (Pause || Shutdown)
 		return;
@@ -686,7 +711,10 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 			NcursesPart2(part2domain);
 		else
 			NcursesPart1(Dptr);
-	}
+	}	
+
+	// release the lock
+	//pthread_mutex_unlock(&mylock);
 
 	return;
 }
@@ -700,6 +728,7 @@ Domains *Initialize()
 	Domains *Dptr = calloc(1, sizeof(Domains));
 	Dptr->count = 0;
 	Dptr->size = 0;
+	Dptr->interface = NULL;
 
 	// allocate memory for array of pointers to struct domain
 	Dptr->dptr = (Domain **) calloc(DOMAINS, sizeof(Domain *));
@@ -767,6 +796,8 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 	char request_clean[128];					 
 	char *host;								/* start of Host header */
 	char host_clean[64];					/* start of Host header not including 'Host: ' */
+	//char address[16];						/* ip address */
+	char *address;  						/* ip address */
 
     /* declare pointers to packet headers */
     const struct sniff_ethernet *ethernet;  /* The ethernet header [1] */
@@ -785,11 +816,10 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
     /* define/compute ip header offset */
     ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
     size_ip = IP_HL(ip)*4;
-    if (size_ip < 20) return;
-    //if (size_ip < 20) {
-     //   printf("   * Invalid IP header length: %u bytes\n", size_ip);
-      //  return;
-    ///}
+    if (size_ip < 20) {
+        printf("   * Invalid IP header length: %u bytes\n", size_ip);
+        return;
+    }
 
 /*
  *      *  OK, this packet is TCP.
@@ -864,11 +894,16 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 				strncpy(host_clean, host+6, num_host-6);
 			
 		}
+
+		address = inet_ntoa(ip->ip_src);
+		if (*address > 15)
+			address[15] = '\0';
 		// send results in
-		Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
+		//Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
+		Tally(Dptr, &http, request_clean, host_clean, address);
 	}
 
-return;
+	return;
 }
 
 int promiscuous(pcap_t *handle, char *dev, char *errbuf)
@@ -895,7 +930,7 @@ int promiscuous(pcap_t *handle, char *dev, char *errbuf)
 int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 
 	struct bpf_program fp;		/* The compiled filter expression */
-	char filter_exp[] = "port 80";	/* The filter expression */
+	char filter_exp[] = PORT;	/* The filter expression */
 	bpf_u_int32 mask;		/* The netmask of our sniffing device */
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
@@ -998,14 +1033,17 @@ int NcursesInit(Domains *Dptr)
 	p1head = newpad(1, columns-3);
 	p1index = newpad(rows-1, 2); // hold indexes
 	p1domains = newpad(rows-1, columns-3); // hold Summary of Domains
+	//p2head = newpad(1, columns);
 	p2head = newpad(1, columns);
 	p2ips = newpad(rows-2, 31);
 	p2requests = newpad(rows-2, columns-32);
+	totalrowsp1 = rows;
 
 	// set dynamic rows variable for scrolling and to resize rows in Part1Resize() and Part2Resize()
 	part1rows = rows-1;
 	p1scrollbottom = part1rows;
 	part2rows = rows-2;
+	totalrowsp2 = part2rows;
 	
 	DisplayIntro(Dptr);
 }
@@ -1102,17 +1140,19 @@ void UserInput(Domains *Dptr)
 				if (usePart2 == 0) {
 					part2domain = Dptr->dptr[selection];
 					usePart2 = 1;
-					NcursesPart2(part2domain);
+					//NcursesPart2(part2domain);
 				}
 				break;
 			case 'i': // switch to part 1
 				if (usePart2 == 1) {
 					usePart2 = 0;
 					part2domain = NULL;
-					NcursesPart1(Dptr);
 					position = 0;
 					selection = 0;
 					p1scrolltop = 0;
+					p1scrollbottom = part1rows;
+					Part2Refresh(Dptr);
+					//NcursesPart1(Dptr);
 				}
 				break;
 			case 'j': // move down
@@ -1120,12 +1160,14 @@ void UserInput(Domains *Dptr)
 				// use Part1
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
 					//if (selection == p1scrollbottom-1) {
-					if (position == part1rows-1) {
+					//if (position == part1rows-1) {
+					if (position == p1scrollbottom-1) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
 						p1scrolltop++;	
 						p1scrollbottom++;
 						selection++;
+						position++;
 						wmove(p1index, selection, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
@@ -1147,12 +1189,14 @@ void UserInput(Domains *Dptr)
 				// usePart1
 				if ((selection > 0) && (usePart2 == 0)) {
 					//if (selection == p1scrolltop) {
-					if (position == 0) {
+					//if (position == 0) {
+					if (position == p1scrolltop) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
 						p1scrolltop--;	
 						p1scrollbottom--;
 						selection--;
+						position--;
 						wmove(p1index, selection, 0);
 						waddstr(p1index, "->");
 						PREFRESHP1DOMAINSSCROLL;
@@ -1214,6 +1258,7 @@ void UserInput(Domains *Dptr)
 				sleep(1);
 
 				// if packet capture has already started
+			/*
 				if (Dptr->count > 0) {
 					if (usePart2)
 						NcursesPart2(part2domain);
@@ -1222,6 +1267,7 @@ void UserInput(Domains *Dptr)
 				}
 				else
 					DisplayIntro(Dptr);
+*/
 				break;
 			default:
 				break;
@@ -1244,6 +1290,7 @@ void PartSwitcher(Domains *Dptr)
 		do {
 			sleep(1);
 		} while (usePart2 == 0);
+/*
 		if (Pause) {
 			werase(p1domains);
 			werase(p1index);
@@ -1253,11 +1300,13 @@ void PartSwitcher(Domains *Dptr)
 			PREFRESHP2REQUESTS;
 		}
 		else
+*/
 			NcursesPart2(part2domain);
 
 		do {
 			sleep(1);
 		} while (usePart2 == 1);
+/*
 		if (Pause) {
 			werase(p2requests);
 			werase(p2ips);
@@ -1267,6 +1316,7 @@ void PartSwitcher(Domains *Dptr)
 			PREFRESHP1DOMAINS;
 		}
 		else
+*/
 			NcursesPart1(Dptr);
 	}
 }
@@ -1277,11 +1327,14 @@ void PartSwitcher(Domains *Dptr)
 void PrintScreen(Domains *Dptr)
 {
 	int status = 0;
+
 	for(;;) {
 		sleep(SECONDS);
+		if (Shutdown == 1) pthread_exit(&status);
 		if (Pause == 0) {
-			if (usePart2 == 0)
+			if (usePart2 == 0) {
 				NcursesPart1(Dptr);
+			}
 			else
 				NcursesPart2(part2domain);
 		}
@@ -1303,15 +1356,16 @@ void PrintUsage(char **argv, Domains *Dptr)
  * function to parse through command line arguments
  * -i interface
  */
-char * ParseArguments(int *argc, char **argv, Domains *Dptr)
+//char * ParseArguments(int *argc, char **argv, Domains *Dptr)
+void ParseArguments(int *argc, char **argv, Domains *Dptr)
 {
 	int opt = 0;
-	char *interface = NULL;
+	//char *interface = NULL;
 
 	while ((opt = getopt(*argc, argv, "hi:r")) != -1) {
 		switch(opt) {
     		case 'i':
-    			interface = optarg;
+    			Dptr->interface = optarg;
     			break;
 			case 'h':
 				PrintUsage(argv, Dptr);
@@ -1328,7 +1382,7 @@ char * ParseArguments(int *argc, char **argv, Domains *Dptr)
   				break;
  		}
  	}
-	return interface;
+	return;
 }
 
 int main(int argc, char *argv[])  {
@@ -1350,8 +1404,12 @@ int main(int argc, char *argv[])  {
 	// set realtime to 0
 	realtime = 0;
 
+	// initialize mutex
+	pthread_mutex_t mylock = PTHREAD_MUTEX_INITIALIZER;
+
 	// variables for capture()
-	char *dev, errbuf[PCAP_ERRBUF_SIZE];
+	//char *dev, errbuf[PCAP_ERRBUF_SIZE];
+	char errbuf[PCAP_ERRBUF_SIZE];
 
 	// main data structure parent
 	Domains *Dptr;
@@ -1361,21 +1419,24 @@ int main(int argc, char *argv[])  {
 
 	// parse arg grab interface nam
 	if (argc > 1) {
-		dev = ParseArguments(&argc, argv, Dptr);
-		Dptr->interface = dev;
+		//dev = ParseArguments(&argc, argv, Dptr);
+		//Dptr->interface = dev;
+		ParseArguments(&argc, argv, Dptr);
+		if (Dptr->interface == NULL)
+			Dptr->interface = pcap_lookupdev(errbuf);
 	}
 	else {
 		// grab default interface
-		dev = pcap_lookupdev(errbuf);
-		Dptr->interface = dev;
+		//dev = pcap_lookupdev(errbuf);
+		Dptr->interface = pcap_lookupdev(errbuf);
 	}
 
-	if (dev == NULL) {
+	if (Dptr->interface == NULL) {
 		fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
 		return(2);
 	}
 
-	fprintf(stderr, "Device: %s\n", dev);
+	fprintf(stderr, "Device: %s\n", Dptr->interface);
 
 	// start up user input thread
 	pthread_create (&user_input, NULL, (void *) &UserInput, (void *) Dptr);
@@ -1388,7 +1449,7 @@ int main(int argc, char *argv[])  {
 		pthread_create (&print_screen, NULL, (void *) &PrintScreen, (void *) Dptr);
 
 	//promiscuous(handle, dev, errbuf);
-	capture(handle, dev, errbuf, Dptr);
+	capture(handle, Dptr->interface, errbuf, Dptr);
 
 	// free up data structures
 	TearDown(Dptr);

@@ -55,3 +55,6 @@ possible
 * split up program into prototypes, functions, main
 * get autotools working to install ncurses-devel and libpcap-devel
 * http status codes, 200 301/302, 404, 500
+
+- runtime commands in PrintUsage
+- fix index ->, it disappears

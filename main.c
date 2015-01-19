@@ -23,7 +23,7 @@
 #include <pthread.h>
 
 /* program version */
-float VERSION = 0.8;
+float VERSION = 0.9;
 
 /* default port */
 #define PORT "port 80"
@@ -136,12 +136,14 @@ struct sniff_tcp {
  * main struct that is at the top of all the data structures
  */
 struct Domains {
+	int seconds;  // rate to print to screen
 	u_int count;  // number of domains
 	u_int size;   // size of domain pointer array
 	struct Domain **dptr;  // array of pointers pointing to struct Domain
 	char *interface;
 	struct bpf_program *fp;
 	pcap_t *handle;
+	char port[11];
 };
 
 typedef struct Domains Domains;
@@ -729,6 +731,10 @@ Domains *Initialize()
 	Dptr->count = 0;
 	Dptr->size = 0;
 	Dptr->interface = NULL;
+	bzero(Dptr->port, 11);
+	strncpy(Dptr->port, PORT, 10);
+	Dptr->port[10] = '\0';
+	Dptr->seconds = SECONDS;
 
 	// allocate memory for array of pointers to struct domain
 	Dptr->dptr = (Domain **) calloc(DOMAINS, sizeof(Domain *));
@@ -930,12 +936,18 @@ int promiscuous(pcap_t *handle, char *dev, char *errbuf)
 int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 
 	struct bpf_program fp;		/* The compiled filter expression */
-	char filter_exp[] = PORT;	/* The filter expression */
+	//char filter_exp[] = PORT;	/* The filter expression */
+	char filter_exp[11];	/* The filter expression */
 	bpf_u_int32 mask;		/* The netmask of our sniffing device */
 	bpf_u_int32 net;		/* The IP of our sniffing device */
 	struct pcap_pkthdr header;	/* The header that pcap gives us */
 	const u_char *packet;		/* The actual packet */
 	int num_packets = 0;           /* number of packets to capture */
+
+	bzero(filter_exp, 11);
+	strncpy(filter_exp, Dptr->port, strlen(Dptr->port));
+	if (filter_exp[10] != '\0');
+		filter_exp[10] = '\0';
 
 	// catch Cntrl-C
 	void mysighand(int signum) {
@@ -1317,6 +1329,9 @@ void PartSwitcher(Domains *Dptr)
 		}
 		else
 */
+			wmove(p1index, position, 0);
+			waddstr(p1index, "->");
+			PREFRESHP1INDEX;
 			NcursesPart1(Dptr);
 	}
 }
@@ -1329,7 +1344,7 @@ void PrintScreen(Domains *Dptr)
 	int status = 0;
 
 	for(;;) {
-		sleep(SECONDS);
+		sleep(Dptr->seconds);
 		if (Shutdown == 1) pthread_exit(&status);
 		if (Pause == 0) {
 			if (usePart2 == 0) {
@@ -1347,7 +1362,14 @@ void PrintScreen(Domains *Dptr)
 void PrintUsage(char **argv, Domains *Dptr)
 {
 	fprintf(stderr, "%s %.1f\n", argv[0], VERSION);
-	fprintf(stderr, "Usage: %s [-ir] [-i interface]\n", argv[0]);
+	fprintf(stderr, "Usage: %s [-i <interface>] [-n <seconds>] [-p <port>] [-r realtime]\n", argv[0]);
+	fprintf(stderr, "Runtime Commands\n");
+	fprintf(stderr, "e - examine selected domain \n");
+	fprintf(stderr, "i - back out to list of domains\n");
+	fprintf(stderr, "j/k - move up and down domain list\n");
+	fprintf(stderr, "p - pause screen to highlight text for copying\n");
+	fprintf(stderr, "q - quit program\n");
+	fprintf(stderr, "r - resize screen\n");
 	free(Dptr);
 	exit(1);
 }
@@ -1362,7 +1384,7 @@ void ParseArguments(int *argc, char **argv, Domains *Dptr)
 	int opt = 0;
 	//char *interface = NULL;
 
-	while ((opt = getopt(*argc, argv, "hi:r")) != -1) {
+	while ((opt = getopt(*argc, argv, "hi:n:p:r")) != -1) {
 		switch(opt) {
     		case 'i':
     			Dptr->interface = optarg;
@@ -1370,11 +1392,29 @@ void ParseArguments(int *argc, char **argv, Domains *Dptr)
 			case 'h':
 				PrintUsage(argv, Dptr);
 				break;
+			case 'n':
+				Dptr->seconds = atoi(optarg);
+				break;
+			case 'p':
+				strncpy(Dptr->port+5, optarg, 5);
+				if (Dptr->port[10] != '\0');
+					Dptr->port[10] = '\0';
+				break;
 			case 'r':
 				realtime = 1;
 				break;
     		case '?':  // if user does not use argument with -i
     			if (optopt == 'i') {
+					PrintUsage(argv, Dptr);
+  				} else {
+					PrintUsage(argv, Dptr);
+  				}
+				if (optopt == 'n') {
+					PrintUsage(argv, Dptr);
+  				} else {
+					PrintUsage(argv, Dptr);
+  				}
+				if (optopt == 'p') {
 					PrintUsage(argv, Dptr);
   				} else {
 					PrintUsage(argv, Dptr);

@@ -1413,7 +1413,7 @@ int filterURL(char *url)
 void PrintUsage(char **argv, Domains *Dptr)
 {
 	fprintf(stderr, "%s version %.1f\n", argv[0], VERSION);
-	fprintf(stderr, "Usage: %s [-i <interface>] [-n <seconds>] [-p <port>] [-r realtime(screen updates per packet)]\n\n", argv[0]);
+	fprintf(stderr, "Usage: %s [-i <interface>] [-n <update screen per seconds(1-120)>] [-p <port(1-65535)>] [-r realtime(screen updates per packet)]\n\n", argv[0]);
 	fprintf(stderr, "Runtime Commands\n");
 	fprintf(stderr, "p - pause screen to highlight text for copying\n");
 	fprintf(stderr, "q - quit program\n");
@@ -1450,12 +1450,20 @@ void ParseArguments(int *argc, char **argv, Domains *Dptr)
 				PrintUsage(argv, Dptr);
 				break;
 			case 'n':
-				Dptr->seconds = atoi(optarg);
-				break;
+				if ((atoi(optarg) > 0) && (atoi(optarg) < 121)) {
+					Dptr->seconds = atoi(optarg);
+					break;
+				}
+				else
+					PrintUsage(argv, Dptr);
 			case 'p':
-				strncpy(Dptr->port+5, optarg, 5);
-				if (Dptr->port[10] != '\0');
-					Dptr->port[10] = '\0';
+				if ((atoi(optarg) > 0) && (atoi(optarg) < 65536)) {
+					strncpy(Dptr->port+5, optarg, 5);
+					if (Dptr->port[10] != '\0');
+						Dptr->port[10] = '\0';
+				}
+				else
+					PrintUsage(argv, Dptr);
 				break;
 			case 'r':
 				realtime = 1;

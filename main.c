@@ -1412,16 +1412,21 @@ int filterURL(char *url)
  */
 void PrintUsage(char **argv, Domains *Dptr)
 {
-	fprintf(stderr, "%s %.1f\n", argv[0], VERSION);
-	fprintf(stderr, "Usage: %s [-i <interface>] [-n <seconds>] [-p <port>] [-r realtime]\n", argv[0]);
+	fprintf(stderr, "%s version %.1f\n", argv[0], VERSION);
+	fprintf(stderr, "Usage: %s [-i <interface>] [-n <seconds>] [-p <port>] [-r realtime(screen updates per packet)]\n\n", argv[0]);
 	fprintf(stderr, "Runtime Commands\n");
-	fprintf(stderr, "e - examine selected domain, only in Master mode\n");
-	fprintf(stderr, "f - add filter/release filter, only in Domain mode\n");
-	fprintf(stderr, "i - back out to list of domains, only in Domain mode\n");
-	fprintf(stderr, "j/k - move up and down domain list, only in Master mode\n");
 	fprintf(stderr, "p - pause screen to highlight text for copying\n");
 	fprintf(stderr, "q - quit program\n");
-	fprintf(stderr, "r - resize screen\n");
+	fprintf(stderr, "r - resize screen\n\n");
+
+
+	fprintf(stderr, "Master mode\n");
+	fprintf(stderr, "e - enter Domain mode for selected domain\n");
+	fprintf(stderr, "j/k - move up and down domain list\n\n");
+
+	fprintf(stderr, "Domain mode\n");
+	fprintf(stderr, "f - add filter/release filter\n");
+	fprintf(stderr, "i - back out to Master mode\n");
 	free(Dptr);
 	exit(1);
 }

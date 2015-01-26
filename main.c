@@ -80,6 +80,10 @@ int usePart2;
 int Pause;
 int Shutdown;
 int realtime;
+int useFilter;
+
+/* filter buffer */
+char Filter[80];
 
 /* Ethernet header */
 struct sniff_ethernet {
@@ -623,9 +627,16 @@ void NcursesPart2(Domain *dptr)
 
 	// output URLs
 	wmove(p2requests, 0, 0);
-	for (i = 0; i < dptr->num_requests; i++)
-		wprintw(p2requests, "count: %d\t%s\n",	dptr->requests[i]->count,
-												dptr->requests[i]->url);	
+	for (i = 0; i < dptr->num_requests; i++) {
+		if (useFilter == 1) {
+			if (filterURL(dptr->requests[i]->url) == 1)
+				wprintw(p2requests, "count: %d\t%s\n",	dptr->requests[i]->count,
+														dptr->requests[i]->url);	
+		}
+		else 
+			wprintw(p2requests, "count: %d\t%s\n",	dptr->requests[i]->count,
+													dptr->requests[i]->url);	
+	}
 
 	PREFRESHP2REQUESTS;
 }	
@@ -1130,6 +1141,7 @@ void UserInput(Domains *Dptr)
 	selection = 0;
 	position = 0;
 	input = 0;
+	useFilter = 0;
 	
 	int ret1 = 0;
 	
@@ -1155,9 +1167,39 @@ void UserInput(Domains *Dptr)
 					//NcursesPart2(part2domain);
 				}
 				break;
-			case 'i': // switch to part 1
+			case 'f': // add filter
+				if (usePart2 == 0) break;
+				if (useFilter == 0) {
+					Pause = 1;
+					useFilter = 1;
+					werase(p2head);
+					PREFRESHP2HEAD;
+					wmove(p2head, 0, 0);
+					wprintw(p2head, "Enter filter: ");
+					wmove(p2head, 0, 15);
+					prefresh(p2head, 0, 0, 0, 0, 0, columns);
+					//wgetnstr(p2head, input, 80);
+					mvgetnstr(0, 14, Filter, 80);
+					werase(p2head);
+					werase(p2ips);
+					werase(p2requests);
+					Part2Refresh(Dptr);
+					Pause = 0;
+				}
+				else {
+					useFilter = 0;
+					clear();
+					move(0, 0);
+					addstr("Removing filter");
+					refresh();
+					ScreenResize();
+					sleep(1);
+				}
+				break;
+				case 'i': // switch to part 1
 				if (usePart2 == 1) {
 					usePart2 = 0;
+					useFilter = 0;
 					part2domain = NULL;
 					position = 0;
 					selection = 0;
@@ -1357,6 +1399,15 @@ void PrintScreen(Domains *Dptr)
 }
 
 /*
+ * function to filter out URLs
+ */
+int filterURL(char *url)
+{
+	if (strstr(url, Filter)) return 1;
+	else return 0;
+}
+
+/*
  * function to print command usage
  */
 void PrintUsage(char **argv, Domains *Dptr)
@@ -1364,9 +1415,10 @@ void PrintUsage(char **argv, Domains *Dptr)
 	fprintf(stderr, "%s %.1f\n", argv[0], VERSION);
 	fprintf(stderr, "Usage: %s [-i <interface>] [-n <seconds>] [-p <port>] [-r realtime]\n", argv[0]);
 	fprintf(stderr, "Runtime Commands\n");
-	fprintf(stderr, "e - examine selected domain \n");
-	fprintf(stderr, "i - back out to list of domains\n");
-	fprintf(stderr, "j/k - move up and down domain list\n");
+	fprintf(stderr, "e - examine selected domain, only in Master mode\n");
+	fprintf(stderr, "f - add filter/release filter, only in Domain mode\n");
+	fprintf(stderr, "i - back out to list of domains, only in Domain mode\n");
+	fprintf(stderr, "j/k - move up and down domain list, only in Master mode\n");
 	fprintf(stderr, "p - pause screen to highlight text for copying\n");
 	fprintf(stderr, "q - quit program\n");
 	fprintf(stderr, "r - resize screen\n");

@@ -58,3 +58,6 @@ possible
 
 - runtime commands in PrintUsage
 - fix index ->, it disappears
+- show posts requests
+- utf-8 encoding so %20 will show properly
+- show POSTS only

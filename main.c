@@ -1,11 +1,12 @@
 //
 //  ddoc.c
 //
-//  Tristan Gonzalez, ddoc, a web traffic statistics collector
-//  Copyright (c) 2014 Tristan Gonzalez. All rights reserved.
+//  Tristan Gonzalez, ddoc, a web request statistics collector
+//  Copyright (c) 2014-2015 Tristan Gonzalez. All rights reserved.
 //  rgonzale@darkterminal.net
 //
-// credits to Tim Carstens sniffer.c
+// credits to Tim Carstens for TCP/IP data structures from sniffer.c
+// credits to Vito Ruiz for the name "ddoc"
 //
 #include <pcap.h>
 #include <stdio.h>
@@ -23,7 +24,7 @@
 #include <pthread.h>
 
 /* program version */
-float VERSION = 0.9;
+float VERSION = 1.0;
 
 /* default port */
 #define PORT "port 80"
@@ -147,7 +148,7 @@ struct Domains {
 	char *interface;
 	struct bpf_program *fp;
 	pcap_t *handle;
-	char port[11];
+	char port[11]; // buffer to hold port number
 };
 
 typedef struct Domains Domains;
@@ -247,6 +248,7 @@ void AddRequest(Domains *Dptr, int *domain_index, int *request_index, char *req)
 	size = Dptr->dptr[*domain_index]->request_size;
 	num_requests = Dptr->dptr[*domain_index]->num_requests;
 
+	// if the number of struct Request is the same as number of struct pointers in the array then realloc array by factor of 2
 	if (num_requests == size) {
 		tmp = (Request **) realloc(Dptr->dptr[*domain_index]->requests, (sizeof(Request *) * size) * 2);
 		if (tmp == NULL) {
@@ -296,6 +298,7 @@ void AddIP(Domains *Dptr, int *domain_index, int *ip_index, char *ip)
 
 	IP **tmp;
 
+	// if the number of struct IP is the same as number of struct pointers in the array then realloc array by factor of 2
 	if (num_ips == size) {
 		tmp = (IP **) realloc(Dptr->dptr[*domain_index]->ips, (sizeof(IP *) * size) * 2);
 		if (tmp == NULL) {
@@ -433,7 +436,7 @@ int sortRequests(Domain *dptr, int *request_index)
 }
 
 /*
- * sort IP function
+ * sort IP function, only compares elements in array that are before it
  */
 int sortIPs(Domain *dptr, int *ip_index)
 {
@@ -479,6 +482,7 @@ void EraseAll()
 	werase(p2requests);
 	clear();	
 }
+
 /*
  * function to refresh all pads
  */
@@ -517,7 +521,6 @@ void Part2Refresh()
 /*
  * function to resize Part1
  */
-//void Part1Resize(Domains *Dptr)
 void Part1Resize()
 {
 	delwin(p1head);
@@ -562,12 +565,7 @@ void NcursesPart1(Domains *Dptr)
 	wmove(p1head, 0, 0);
 	
 	if (Pause) waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\t\t*Paused*\n");
-		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\ttotalrows: %i\t*Paused*\n", rows, part1rows, totalrows);
-		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\tp1scrollbottom: %i\tp1scrolltop: %i\tposition = %i\t*Paused*\n", rows, part1rows, p1scrollbottom, p1scrolltop, position);
-
 	else waddstr(p1head, "Total\t\tGET\t\tPOST\t\tDomain\n");
-		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i\tpart1rows: %i\ttotalrows: %i", rows, part1rows, totalrows);
-		//wprintw(p1head, "Total\t\tGET\t\tPOST\t\tDomain\trows: %i part1rows: %i p1scrollbottom: %i p1scrolltop: %i position: %i totalrows: %i stuff", rows, part1rows, p1scrollbottom, p1scrolltop, position, totalrowsp1);
 
 	PREFRESHP1HEAD;
 
@@ -584,7 +582,6 @@ void NcursesPart1(Domains *Dptr)
 	// refresh index arrow
 	PREFRESHP1INDEX;
 }
-
 
 /*
  * Ncurses Part2 - Summary of Domain
@@ -643,11 +640,6 @@ void NcursesPart2(Domain *dptr)
 
 /*
  * executes accounting
- * 
- * request: GET / HTTP/1.1
- * request: POST / HTTP/1.1
- * host: darkterminal.net
- * 
  */
 void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 {
@@ -656,9 +648,6 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	domain_index = 0;
 	request_index = 0;
 	ip_index = 0;
-
-	// turn on the lock
-	//pthread_mutex_lock(&mylock);
 
 	domain_index = GetDomainIndex(Dptr, host);
 
@@ -725,9 +714,6 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 		else
 			NcursesPart1(Dptr);
 	}	
-
-	// release the lock
-	//pthread_mutex_unlock(&mylock);
 
 	return;
 }
@@ -802,7 +788,6 @@ int isGETPOST(const u_char *payload)
 
 /*
  * dissect/print packet
- *   
  */
 void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *packet)
 {
@@ -813,7 +798,6 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 	char request_clean[128];					 
 	char *host;								/* start of Host header */
 	char host_clean[64];					/* start of Host header not including 'Host: ' */
-	//char address[16];						/* ip address */
 	char *address;  						/* ip address */
 
     /* declare pointers to packet headers */
@@ -840,7 +824,6 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 
 /*
  *      *  OK, this packet is TCP.
- *           
  */
     /* define/compute tcp header offset */
     tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
@@ -849,22 +832,6 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
         printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
         return;
     }
-
-    // if TCP and ACK
-   // if((ip->ip_p == IPPROTO_TCP) && ((tcp->th_flags) == 16))
-	//	printf("HTTP packet\n");
-/*
-    printf("   Src port: %d\n", ntohs(tcp->th_sport));
-    printf("   Dst port: %d\n", ntohs(tcp->th_dport));
-
-    printf("       From: %s\n", inet_ntoa(ip->ip_src));
-    printf("         To: %s\n", inet_ntoa(ip->ip_dst));
-
-    printf("         ID: %d\n", (ip->ip_id));
-    printf("        Seq: %lu\n", (tcp->th_seq));
-    printf("        Ack: %lu\n", (tcp->th_ack));
-    printf("        THF: %x\n", tcp->th_flags);
-*/
 
     /* define/compute tcp payload (segment) offset */
     payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
@@ -875,7 +842,6 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 /*
  *      * Print payload data; it might be binary, so don't just
  *           * treat it as a string.
- *                
  */
     if ((size_payload > 0) && (http = isGETPOST(payload))) {
 
@@ -894,7 +860,7 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 		else
 			strncpy(request_clean, payload, num_request);
 
-		// host
+		// host header
 		host = strstr(payload, "Host: ");
 		if (host == NULL)
 			snprintf(host_clean, 5, "NULL");
@@ -916,13 +882,15 @@ void got_packet(Domains *Dptr, const struct pcap_pkthdr *header, const u_char *p
 		if (*address > 15)
 			address[15] = '\0';
 		// send results in
-		//Tally(Dptr, &http, request_clean, host_clean, inet_ntoa(ip->ip_src));
 		Tally(Dptr, &http, request_clean, host_clean, address);
 	}
 
 	return;
 }
 
+/*
+ * function to put interface in promiscuous/capture mode
+ */
 int promiscuous(pcap_t *handle, char *dev, char *errbuf)
 {
 
@@ -944,10 +912,12 @@ int promiscuous(pcap_t *handle, char *dev, char *errbuf)
 	return 0;
 }
 
+/*
+ * main capture  function
+ */
 int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 
 	struct bpf_program fp;		/* The compiled filter expression */
-	//char filter_exp[] = PORT;	/* The filter expression */
 	char filter_exp[11];	/* The filter expression */
 	bpf_u_int32 mask;		/* The netmask of our sniffing device */
 	bpf_u_int32 net;		/* The IP of our sniffing device */
@@ -1015,7 +985,6 @@ int capture(pcap_t *handle, char *dev, char *errbuf, Domains *Dptr) {
 
 	// shut down Ncurses
 	CleanExit(Dptr);
-	//NcursesExit();
 
 	printf("\nCapture complete.\n");
 
@@ -1056,7 +1025,6 @@ int NcursesInit(Domains *Dptr)
 	p1head = newpad(1, columns-3);
 	p1index = newpad(rows-1, 2); // hold indexes
 	p1domains = newpad(rows-1, columns-3); // hold Summary of Domains
-	//p2head = newpad(1, columns);
 	p2head = newpad(1, columns);
 	p2ips = newpad(rows-2, 31);
 	p2requests = newpad(rows-2, columns-32);
@@ -1091,8 +1059,6 @@ CleanExit(Domains *Dptr)
 	sleep(1);
     
 	NcursesExit();
-
-	//pcap_freecode(Dptr->fp);
 
 	if (Dptr->handle != NULL)
 		pcap_close(Dptr->handle);
@@ -1152,8 +1118,6 @@ void UserInput(Domains *Dptr)
 	// turn off cursor
 	curs_set(0);
 
-	//wmove(p1index, 0, 0);
-	//waddstr(p1index, "->");
 	PREFRESHP1INDEX;
 	
 	do {
@@ -1164,7 +1128,6 @@ void UserInput(Domains *Dptr)
 				if (usePart2 == 0) {
 					part2domain = Dptr->dptr[selection];
 					usePart2 = 1;
-					//NcursesPart2(part2domain);
 				}
 				break;
 			case 'f': // add filter
@@ -1178,7 +1141,6 @@ void UserInput(Domains *Dptr)
 					wprintw(p2head, "Enter filter: ");
 					wmove(p2head, 0, 15);
 					prefresh(p2head, 0, 0, 0, 0, 0, columns);
-					//wgetnstr(p2head, input, 80);
 					mvgetnstr(0, 14, Filter, 80);
 					werase(p2head);
 					werase(p2ips);
@@ -1213,8 +1175,6 @@ void UserInput(Domains *Dptr)
 				// if at the bottom of the screen
 				// use Part1
 				if ((selection < Dptr->count-1) && (usePart2 == 0)) {
-					//if (selection == p1scrollbottom-1) {
-					//if (position == part1rows-1) {
 					if (position == p1scrollbottom-1) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
@@ -1242,8 +1202,6 @@ void UserInput(Domains *Dptr)
 				// if at the top of the screen
 				// usePart1
 				if ((selection > 0) && (usePart2 == 0)) {
-					//if (selection == p1scrolltop) {
-					//if (position == 0) {
 					if (position == p1scrolltop) {
 						wmove(p1index, selection, 0);
 						werase(p1index);
@@ -1310,18 +1268,6 @@ void UserInput(Domains *Dptr)
 				refresh();
 				ScreenResize();
 				sleep(1);
-
-				// if packet capture has already started
-			/*
-				if (Dptr->count > 0) {
-					if (usePart2)
-						NcursesPart2(part2domain);
-					else
-						NcursesPart1(Dptr);
-				}
-				else
-					DisplayIntro(Dptr);
-*/
 				break;
 			default:
 				break;
@@ -1344,33 +1290,11 @@ void PartSwitcher(Domains *Dptr)
 		do {
 			sleep(1);
 		} while (usePart2 == 0);
-/*
-		if (Pause) {
-			werase(p1domains);
-			werase(p1index);
-			PREFRESHP1DOMAINS;
-			PREFRESHP1INDEX;
-			PREFRESHP2IPS;
-			PREFRESHP2REQUESTS;
-		}
-		else
-*/
 			NcursesPart2(part2domain);
 
 		do {
 			sleep(1);
 		} while (usePart2 == 1);
-/*
-		if (Pause) {
-			werase(p2requests);
-			werase(p2ips);
-			PREFRESHP2REQUESTS;
-			PREFRESHP2IPS;
-			PREFRESHP1INDEX;
-			PREFRESHP1DOMAINS;
-		}
-		else
-*/
 			wmove(p1index, position, 0);
 			waddstr(p1index, "->");
 			PREFRESHP1INDEX;
@@ -1413,7 +1337,7 @@ int filterURL(char *url)
 void PrintUsage(char **argv, Domains *Dptr)
 {
 	fprintf(stderr, "%s version %.1f\n", argv[0], VERSION);
-	fprintf(stderr, "Usage: %s [-i <interface>] [-n <update screen per seconds(1-120)>] [-p <port(1-65535)>] [-r realtime(screen updates per packet)]\n\n", argv[0]);
+	fprintf(stderr, "Usage: %s [-i <interface(default eth0)>] [-n <update screen per seconds(1-120, default 2)>] [-p <port(1-65535, default 80)>] [-r realtime(screen updates per packet)]\n\n", argv[0]);
 	fprintf(stderr, "Runtime Commands\n");
 	fprintf(stderr, "p - pause screen to highlight text for copying\n");
 	fprintf(stderr, "q - quit program\n");
@@ -1433,13 +1357,10 @@ void PrintUsage(char **argv, Domains *Dptr)
 
 /*
  * function to parse through command line arguments
- * -i interface
  */
-//char * ParseArguments(int *argc, char **argv, Domains *Dptr)
 void ParseArguments(int *argc, char **argv, Domains *Dptr)
 {
 	int opt = 0;
-	//char *interface = NULL;
 
 	while ((opt = getopt(*argc, argv, "hi:n:p:r")) != -1) {
 		switch(opt) {
@@ -1468,7 +1389,7 @@ void ParseArguments(int *argc, char **argv, Domains *Dptr)
 			case 'r':
 				realtime = 1;
 				break;
-    		case '?':  // if user does not use argument with -i
+    		case '?':  // if user does not use required argument with an option
     			if (optopt == 'i') {
 					PrintUsage(argv, Dptr);
   				} else {
@@ -1513,7 +1434,6 @@ int main(int argc, char *argv[])  {
 	pthread_mutex_t mylock = PTHREAD_MUTEX_INITIALIZER;
 
 	// variables for capture()
-	//char *dev, errbuf[PCAP_ERRBUF_SIZE];
 	char errbuf[PCAP_ERRBUF_SIZE];
 
 	// main data structure parent
@@ -1524,15 +1444,12 @@ int main(int argc, char *argv[])  {
 
 	// parse arg grab interface nam
 	if (argc > 1) {
-		//dev = ParseArguments(&argc, argv, Dptr);
-		//Dptr->interface = dev;
 		ParseArguments(&argc, argv, Dptr);
 		if (Dptr->interface == NULL)
 			Dptr->interface = pcap_lookupdev(errbuf);
 	}
 	else {
 		// grab default interface
-		//dev = pcap_lookupdev(errbuf);
 		Dptr->interface = pcap_lookupdev(errbuf);
 	}
 

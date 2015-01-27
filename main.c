@@ -24,7 +24,7 @@
 #include <pthread.h>
 
 /* program version */
-float VERSION = 1.0;
+float VERSION = 0.9;
 
 /* default port */
 #define PORT "port 80"
@@ -541,10 +541,17 @@ void Part1Resize()
  */
 void Part2Resize()
 {
+	delwin(p2head);
 	delwin(p2ips);
 	delwin(p2requests);
-	p2ips = newpad(totalrowsp2*2, 2);
-	p2requests = newpad(totalrowsp2*2, columns-3);
+	p2head = newpad(1, columns);
+	p2ips = newpad((totalrowsp2*2)-2, 31);
+	p2requests = newpad((totalrowsp2*2)-2, columns-32);
+
+	totalrowsp2 *= 2;
+	PREFRESHP2HEAD;
+	PREFRESHP2IPS;
+	PREFRESHP2REQUESTS;;
 }
 
 /*
@@ -605,11 +612,12 @@ void NcursesPart2(Domain *dptr)
 											dptr->POST,
 											dptr->total_requests);
 	else
-		wprintw(p2head, "IPs:count\t\t%s\t\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n", 
+		//wprintw(p2head, "IPs:count\t\t%s\t\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d\n", 
+		wprintw(p2head, "IPs:count\t\t%s\t\tGET: %d\t\tPOST: %d\t\tTotal Requests: %d num_requests: %d, totalrowsp2: %d\n", 
 											dptr->name,
 											dptr->GET,
 											dptr->POST,
-											dptr->total_requests);
+											dptr->total_requests, dptr->num_requests, totalrowsp2);
 
 	PREFRESHP2HEAD;
 
@@ -701,6 +709,9 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	// add more rows if need be
 	if (Dptr->count >= totalrowsp1 - 1)
 		Part1Resize();
+
+	if (Dptr->dptr[domain_index]->num_requests >= totalrowsp2)
+		Part2Resize();
 
 	//if (Pause == 1) return;
 	if (Pause || Shutdown)

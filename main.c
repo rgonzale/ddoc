@@ -58,8 +58,8 @@ float VERSION = 0.9;
 #define PREFRESHP1INDEX prefresh(p1index, p1scrolltop, 0, 1, 0, part1rows, 1);
 #define PREFRESHP1DOMAINS prefresh(p1domains, p1scrolltop, 0, 1, 3, part1rows, columns);
 #define PREFRESHP2HEAD prefresh(p2head, 0, 0, 0, 0, 0, columns);
-#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, 42, 30);
-#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, 42, columns);
+#define PREFRESHP2IPS prefresh(p2ips, 0, 0, 2, 0, part2rows, 30);
+#define PREFRESHP2REQUESTS prefresh(p2requests, 0, 0, 2, 32, part2rows, columns);
 
 /* Declaring Ncurses Pads */
 WINDOW *p1head, *p1index, *p1domains, *p2head, *p2ips, *p2requests;
@@ -710,7 +710,8 @@ void Tally(Domains *Dptr, int *http, char *request, char *host, char *ip)
 	if (Dptr->count >= totalrowsp1 - 1)
 		Part1Resize();
 
-	if (Dptr->dptr[domain_index]->num_requests >= totalrowsp2)
+	if ((Dptr->dptr[domain_index]->num_requests >= totalrowsp2) ||
+		(Dptr->dptr[domain_index]->num_ips >= totalrowsp2))
 		Part2Resize();
 
 	//if (Pause == 1) return;
@@ -1044,7 +1045,7 @@ int NcursesInit(Domains *Dptr)
 	// set dynamic rows variable for scrolling and to resize rows in Part1Resize() and Part2Resize()
 	part1rows = rows-1;
 	p1scrollbottom = part1rows;
-	part2rows = rows-2;
+	part2rows = rows-1;
 	totalrowsp2 = part2rows;
 	
 	DisplayIntro(Dptr);

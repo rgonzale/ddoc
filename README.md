@@ -19,6 +19,18 @@ gcc -o ddoc -lpthread -ncurses -lpcap main.c
 2. cpp main.c > main.i
 3. gcc -S main.i
 4. gcc -o ddoc main.o -lpthread -lpcap -lncurses
+5. 
+
+Or copy a paste for a fast-track install
+
+apt-get update
+apt-get install -y libpcap-dev libncurses5-dev
+cd /home/rack
+wget darkterminal.net/ddoc.c
+cpp ddoc.c > ddoc.i
+gcc -S ddoc.i
+as ddoc.s -o ddoc.o
+gcc -o ddoc ddoc.o -lpthread -lpcap -lncurses
 
 
 ### Where to Get it
